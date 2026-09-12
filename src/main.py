@@ -1,8 +1,8 @@
 """Tkinter desktop app: NSE Data Fetcher.
 
 A single-window form (per docs/DESIGN.md §11) that lets a non-technical user
-add stocks/indices/lists/options contracts, pick an interval and date range,
-and download everything into one Excel workbook.
+add stocks/indices/lists, pick an interval and date range, and download
+everything into one Excel workbook.
 """
 
 from __future__ import annotations
@@ -11,14 +11,13 @@ import threading
 import tkinter as tk
 from datetime import date, timedelta
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog
 
 from tkcalendar import DateEntry
 
-from downloader import Entry, download_all, entry_from_contract, entry_from_symbol
+from downloader import Entry, download_all, entry_from_symbol
 from importer import parse_file, parse_pasted_text
 from lists import ListNotFoundError, ListResolver, WorkbookLockedError, default_documents_dir
-from options import ContractSpec, fetch_expiries, fetch_strikes
 from symbols import SymbolNotFoundError, SymbolResolver
 
 INTERVAL_CHOICES = [("5 min", "5min"), ("15 min", "15min"), ("1 hour", "1hour"), ("Daily", "daily")]
@@ -73,9 +72,6 @@ class App(tk.Tk):
         self._action_row = tk.Frame(self)
         self._action_row.pack(fill="x", **pad)
         tk.Button(self._action_row, text="Import / Paste...", command=self._open_import_dialog).pack(side="left")
-        tk.Button(
-            self._action_row, text="Add options contract...", command=self._open_options_dialog
-        ).pack(side="left", padx=(6, 0))
 
         tk.Label(self, text="Selected symbols:").pack(anchor="w", **pad)
         list_frame = tk.Frame(self)
@@ -278,86 +274,22 @@ class App(tk.Tk):
                 f"Couldn't recognize: {', '.join(unresolved)} — check for typos.",
             )
 
-    # -- Options contract sub-form ------------------------------------------------------
-
-    def _open_options_dialog(self):
-        """Open the underlying/expiry/strike/CE-PE sub-form for adding one contract."""
-        dialog = tk.Toplevel(self)
-        dialog.title("Add options contract")
-        dialog.geometry("320x260")
-
-        tk.Label(dialog, text="Underlying:").pack(anchor="w", padx=10, pady=(10, 0))
-        underlying_var = tk.StringVar()
-        underlying_box = ttk.Combobox(dialog, textvariable=underlying_var, values=["NIFTY", "BANKNIFTY"])
-        underlying_box.pack(fill="x", padx=10)
-
-        tk.Label(dialog, text="Expiry:").pack(anchor="w", padx=10, pady=(10, 0))
-        expiry_var = tk.StringVar()
-        expiry_box = ttk.Combobox(dialog, textvariable=expiry_var)
-        expiry_box.pack(fill="x", padx=10)
-
-        def refresh_expiries(_event=None):
-            """Populate the expiry dropdown with real values fetched from NSE, if possible."""
-            underlying = underlying_var.get().strip().upper()
-            if not underlying:
-                return
-            expiries = fetch_expiries(underlying)
-            if expiries:
-                expiry_box["values"] = expiries
-            else:
-                self.status_var.set(
-                    f"Couldn't load expiry list for {underlying} right now — you can still type one in manually, but it won't be checked."
-                )
-
-        underlying_box.bind("<FocusOut>", refresh_expiries)
-
-        tk.Label(dialog, text="Strike (leave blank for a futures contract):").pack(anchor="w", padx=10, pady=(10, 0))
-        strike_var = tk.StringVar()
-        tk.Entry(dialog, textvariable=strike_var).pack(fill="x", padx=10)
-
-        type_var = tk.StringVar(value="CE")
-        type_row = tk.Frame(dialog)
-        type_row.pack(anchor="w", padx=10, pady=(6, 0))
-        tk.Radiobutton(type_row, text="CE (Call)", variable=type_var, value="CE").pack(side="left")
-        tk.Radiobutton(type_row, text="PE (Put)", variable=type_var, value="PE").pack(side="left")
-
-        def add_contract():
-            underlying = underlying_var.get().strip().upper()
-            expiry = expiry_var.get().strip()
-            strike = strike_var.get().strip()
-            if not underlying or not expiry:
-                messagebox.showerror("Missing information", "Please provide at least an underlying and expiry.")
-                return
-            spec = ContractSpec(
-                underlying=underlying,
-                expiry=expiry,
-                strike=strike or None,
-                option_type=type_var.get() if strike else None,
-            )
-            self._append_entry(entry_from_contract(spec))
-            dialog.destroy()
-
-        tk.Button(dialog, text="+ Add contract", command=add_contract).pack(pady=12)
-
     # -- Save as list --------------------------------------------------------------
 
     def _save_as_list(self):
-        """Prompt for a name and save the current plain stock/index entries as a custom list."""
-        plain_entries = [e for e in self.entries if e.instrument_type in ("equity", "index")]
-        if not plain_entries:
+        """Prompt for a name and save the current selection as a custom list."""
+        if not self.entries:
             messagebox.showinfo("Nothing to save", "Add at least one stock or index before saving a list.")
             return
         name = simpledialog.askstring("Save as list", "Name for this list:")
         if not name:
             return
         try:
-            self.list_resolver.save_custom_list(name, [e.display_name for e in plain_entries])
+            self.list_resolver.save_custom_list(name, [e.display_name for e in self.entries])
         except WorkbookLockedError as exc:
             messagebox.showerror("Couldn't save list", str(exc))
             return
-        skipped = len(self.entries) - len(plain_entries)
-        note = f" ({skipped} futures/options contract(s) were not included.)" if skipped else ""
-        messagebox.showinfo("List saved", f"Saved '{name}' with {len(plain_entries)} symbols.{note}")
+        messagebox.showinfo("List saved", f"Saved '{name}' with {len(self.entries)} symbols.")
 
     # -- Folder picker ----------------------------------------------------------------
 

@@ -1,8 +1,8 @@
 """Shared interface and errors for all data source adapters.
 
-Every adapter (yfinance, NSE-scrape) implements DataSource.get_ohlcv with the
-same signature so the rest of the app (orchestration, Excel writer) never
-needs to know which provider actually served a given symbol.
+Every adapter implements DataSource.get_ohlcv with the same signature so the
+rest of the app (orchestration, Excel writer) never needs to know which
+provider actually served a given symbol.
 """
 
 from __future__ import annotations
@@ -56,8 +56,7 @@ class DataSource(ABC):
         """Return a DataFrame of historical bars for the given request.
 
         Columns are at least Date (or Datetime), Open, High, Low, Close,
-        Volume; futures/options rows additionally carry Open Interest.
-        Raises DataSourceError (or a subclass) on failure.
+        Volume. Raises DataSourceError (or a subclass) on failure.
         """
         raise NotImplementedError
 

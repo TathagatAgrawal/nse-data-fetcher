@@ -1,9 +1,8 @@
 """Best-effort live fetch of NSE index names and their member symbols.
 
 NSE has no official public API for this, but it publishes both through
-unofficial endpoints/files -- the same category of source `options.py`
-already relies on for expiries and strikes (see docs/DESIGN.md §6/§16).
-Every function here is best-effort and never raises: these endpoints are
+unofficial endpoints/files (see docs/DESIGN.md §6/§16). Every function
+here is best-effort and never raises: these endpoints are
 undocumented and can be blocked or fail depending on network/IP, so
 callers should fall back to a bundled/cached list when a call returns [].
 """

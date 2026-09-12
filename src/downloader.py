@@ -14,15 +14,12 @@ from typing import Callable
 import pandas as pd
 
 from datasources.base import DataSourceError, FetchRequest, clamp_start_for_interval
-from datasources.nse_source import NseSource
 from datasources.yfinance_source import YFinanceSource
 from excel_writer import write_workbook
-from options import ContractSpec
 from symbols import SymbolResolver
 
 _ADAPTERS = {
     "yfinance": YFinanceSource(),
-    "nse": NseSource(),
 }
 
 
@@ -57,17 +54,6 @@ def entry_from_symbol(resolver: SymbolResolver, name: str) -> Entry:
         ticker=resolved.ticker,
         adapter=resolved.adapter,
         instrument_type=resolved.instrument_type,
-    )
-
-
-def entry_from_contract(spec: ContractSpec) -> Entry:
-    """Build an Entry from a futures/options ContractSpec built by the options sub-form."""
-    return Entry(
-        display_name=spec.display_name,
-        sheet_name=spec.sheet_name,
-        ticker=spec.ticker,
-        adapter="nse",
-        instrument_type=spec.instrument_type,
     )
 
 
