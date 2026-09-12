@@ -43,3 +43,14 @@ pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_t
 # Windows:
 pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv;." --add-data "lists;lists" main.py
 ```
+
+## Publishing a release
+
+`.github/workflows/release.yml` builds both the Windows `.exe` and the macOS `.app` (each on its native runner, since PyInstaller doesn't cross-compile) and attaches them to a GitHub Release. To cut one:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+That triggers the workflow, which publishes a Release named after the tag with `NSE-Data-Fetcher-Windows.exe` and `NSE-Data-Fetcher-macOS.zip` attached — from there anyone can grab the file straight from the repo's Releases page, no Python or building required. Pushing to a branch, or running the workflow manually from the Actions tab, builds and uploads the same files as workflow artifacts without publishing a Release, so a build can be sanity-checked first.

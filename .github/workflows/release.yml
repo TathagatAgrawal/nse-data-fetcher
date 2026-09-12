@@ -1,0 +1,95 @@
+name: Build and Release
+
+# Builds the desktop app on Windows and macOS (PyInstaller doesn't
+# cross-compile, so each OS's executable has to be built on that OS) and
+# publishes both to a GitHub Release whenever a version tag is pushed.
+#
+# To cut a release: git tag v1.0.0 && git push origin v1.0.0
+#
+# Pushing without a tag (e.g. on a branch, or via the "Run workflow" button)
+# still builds and uploads the executables as workflow artifacts, so a build
+# can be sanity-checked before it's ever attached to a public release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset_name: NSE-Data-Fetcher-Windows.exe
+          - os: macos-latest
+            asset_name: NSE-Data-Fetcher-macOS.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        working-directory: src
+        run: >
+          pyinstaller --onefile --windowed --name "NSE Data Fetcher"
+          --add-data "symbols_table.csv;."
+          --add-data "lists;lists"
+          main.py
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        working-directory: src
+        run: >
+          pyinstaller --onefile --windowed --name "NSE Data Fetcher"
+          --add-data "symbols_table.csv:."
+          --add-data "lists:lists"
+          main.py
+
+      - name: Package Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item "src/dist/NSE Data Fetcher.exe" "${{ matrix.asset_name }}"
+
+      - name: Package macOS app bundle
+        if: runner.os == 'macOS'
+        working-directory: src/dist
+        run: ditto -c -k --sequesterRsrc --keepParent "NSE Data Fetcher.app" "../../${{ matrix.asset_name }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten downloaded artifacts
+        run: |
+          mkdir release-files
+          find artifacts -type f -exec cp {} release-files/ \;
+
+      - uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: release-files/*
