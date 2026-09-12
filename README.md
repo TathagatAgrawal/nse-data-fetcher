@@ -33,10 +33,13 @@ python -m pytest tests/
 
 ## Packaging as a standalone app
 
-Not yet built. The plan (§13 of the design doc) is to use PyInstaller, run separately on each target OS (it does not cross-compile):
+The plan (§13 of the design doc) is to use PyInstaller, run separately on each target OS (it does not cross-compile). `symbols_table.csv` and the bundled `lists/` folder are plain data files, not Python modules, so PyInstaller won't pick them up on its own -- they must be passed explicitly via `--add-data`, or `SymbolResolver`/`ListResolver` will raise `FileNotFoundError` at startup looking for them inside the `_MEIxxxxx` temp extraction folder. The `--add-data SRC:DEST` separator is `:` on macOS/Linux and `;` on Windows:
 
 ```bash
 pip install pyinstaller
 cd src
-pyinstaller --onefile --windowed --name "NSE Data Fetcher" main.py
+# macOS/Linux:
+pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv:." --add-data "lists:lists" main.py
+# Windows:
+pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv;." --add-data "lists;lists" main.py
 ```
