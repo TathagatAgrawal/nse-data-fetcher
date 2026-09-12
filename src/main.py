@@ -60,18 +60,22 @@ class App(tk.Tk):
         entry_row = tk.Frame(self)
         entry_row.pack(fill="x", **pad)
         self.entry_var = tk.StringVar()
-        self.entry_box = ttk.Combobox(entry_row, textvariable=self.entry_var, width=35)
+        self.entry_box = tk.Entry(entry_row, textvariable=self.entry_var, width=35)
         self.entry_box.pack(side="left", fill="x", expand=True)
         self.entry_box.bind("<KeyRelease>", self._on_entry_keyrelease)
         self.entry_box.bind("<Return>", lambda e: self._add_from_entry())
         tk.Button(entry_row, text="+ Add", command=self._add_from_entry).pack(side="left", padx=(6, 0))
 
-        action_row = tk.Frame(self)
-        action_row.pack(fill="x", **pad)
-        tk.Button(action_row, text="Import / Paste...", command=self._open_import_dialog).pack(side="left")
-        tk.Button(action_row, text="Add options contract...", command=self._open_options_dialog).pack(
-            side="left", padx=(6, 0)
-        )
+        # Suggestions appear here as the user types; hidden (not packed) when empty.
+        self.suggestions_listbox = tk.Listbox(self, height=5)
+        self.suggestions_listbox.bind("<<ListboxSelect>>", self._on_suggestion_selected)
+
+        self._action_row = tk.Frame(self)
+        self._action_row.pack(fill="x", **pad)
+        tk.Button(self._action_row, text="Import / Paste...", command=self._open_import_dialog).pack(side="left")
+        tk.Button(
+            self._action_row, text="Add options contract...", command=self._open_options_dialog
+        ).pack(side="left", padx=(6, 0))
 
         tk.Label(self, text="Selected symbols:").pack(anchor="w", **pad)
         list_frame = tk.Frame(self)
@@ -129,11 +133,38 @@ class App(tk.Tk):
     # -- Entry field / autocomplete --------------------------------------------------
 
     def _on_entry_keyrelease(self, _event):
-        """Refresh the combobox's dropdown suggestions as the user types."""
+        """Refresh the suggestions listbox below the entry field as the user types.
+
+        This is a plain Listbox we show/hide ourselves rather than a
+        ttk.Combobox's built-in dropdown -- rewriting a Combobox's `values`
+        on every keystroke is known to pop its dropdown open and steal
+        keyboard focus on some platforms, which made the entry field appear
+        to stop accepting input after a character or two.
+        """
         text = self.entry_var.get()
+        if not text.strip():
+            self.suggestions_listbox.pack_forget()
+            return
         symbol_matches = self.symbol_resolver.suggest(text, limit=8)
         list_matches = [n for n in self.list_resolver.all_list_names() if text.upper() in n.upper()][:5]
-        self.entry_box["values"] = list_matches + symbol_matches
+        suggestions = list_matches + symbol_matches
+        if not suggestions:
+            self.suggestions_listbox.pack_forget()
+            return
+        self.suggestions_listbox.delete(0, "end")
+        for s in suggestions:
+            self.suggestions_listbox.insert("end", s)
+        self.suggestions_listbox.pack(fill="x", padx=10, before=self._action_row)
+
+    def _on_suggestion_selected(self, _event):
+        """Fill the entry field with the clicked suggestion and hide the list."""
+        selection = self.suggestions_listbox.curselection()
+        if not selection:
+            return
+        self.entry_var.set(self.suggestions_listbox.get(selection[0]))
+        self.suggestions_listbox.pack_forget()
+        self.entry_box.focus_set()
+        self.entry_box.icursor("end")
 
     def _add_from_entry(self):
         """Resolve the entry field's text as a list name or a single symbol, and add it."""
@@ -146,6 +177,7 @@ class App(tk.Tk):
         else:
             self._add_symbol(text)
         self.entry_var.set("")
+        self.suggestions_listbox.pack_forget()
 
     def _add_symbol(self, name: str):
         """Resolve and add a single stock/index by name, reporting failure via a dialog."""
