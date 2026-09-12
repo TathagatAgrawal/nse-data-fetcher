@@ -8,11 +8,18 @@ syntax a data source actually expects, plus which adapter should serve it.
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 
 SYMBOLS_TABLE_PATH = Path(__file__).parent / "symbols_table.csv"
+
+# A plain ticker-shaped token (letters/digits/&/- only, no spaces) that isn't
+# in the bundled table is assumed to be a valid but untabulated NSE equity
+# symbol, rather than rejected outright -- the bundled table only covers a
+# few dozen names, but NSE lists 1500+ stocks.
+_RAW_TICKER_PATTERN = re.compile(r"^[A-Z0-9&\-]{1,20}$")
 
 
 @dataclass(frozen=True)
@@ -58,15 +65,33 @@ class SymbolResolver:
     def resolve(self, query: str) -> ResolvedSymbol:
         """Resolve a user-typed name to its ticker/adapter/instrument type.
 
-        Raises SymbolNotFoundError (with close-match suggestions) if the
-        name isn't recognized.
+        Exact matches against the bundled table win first. Failing that, if
+        the input is a close typo of a known name, raise SymbolNotFoundError
+        with that suggestion rather than guessing wrong. Otherwise, if the
+        input is shaped like a plain ticker (e.g. "SBI", "IRCTC") -- not a
+        multi-word index/list name -- treat it as a real but untabulated NSE
+        equity symbol and try ticker.NS; whether it's actually a valid symbol
+        is then discovered at fetch time (via NoDataError), same as any other
+        symbol.
         """
         key = query.strip().upper()
         match = self._by_name.get(key)
         if match is not None:
             return match
-        suggestions = get_close_matches(key, self._by_name.keys(), n=3, cutoff=0.6)
-        raise SymbolNotFoundError(query, [self._by_name[s].display_name for s in suggestions])
+
+        # A high cutoff here matters: at the more permissive 0.6, unrelated
+        # tickers like "IRCTC" were fuzzy-matching "ITC" and getting rejected
+        # instead of falling through to the raw-ticker guess below -- 0.85
+        # still catches real typos (e.g. "RELAINCE" -> RELIANCE) without
+        # blocking distinct, untabulated symbols.
+        suggestions = get_close_matches(key, self._by_name.keys(), n=3, cutoff=0.85)
+        if suggestions:
+            raise SymbolNotFoundError(query, [self._by_name[s].display_name for s in suggestions])
+
+        if _RAW_TICKER_PATTERN.match(key):
+            return ResolvedSymbol(display_name=key, ticker=f"{key}.NS", adapter="yfinance", instrument_type="equity")
+
+        raise SymbolNotFoundError(query, [])
 
     def suggest(self, prefix: str, limit: int = 10) -> list[str]:
         """Return display names starting with or containing the given prefix.

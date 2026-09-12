@@ -39,6 +39,19 @@ class App(tk.Tk):
 
         self._build_widgets()
 
+    def report_callback_exception(self, exc_type, exc_value, tb):
+        """Surface any unexpected error in a dialog instead of only printing to stderr.
+
+        Tkinter's default just prints the traceback to the console, which is
+        invisible to a user who launched the app by double-clicking rather
+        than from a terminal -- to them it would look like a button silently
+        did nothing.
+        """
+        import traceback
+
+        traceback.print_exception(exc_type, exc_value, tb)
+        messagebox.showerror("Something went wrong", f"{exc_type.__name__}: {exc_value}")
+
     def _build_widgets(self):
         """Lay out the single-window form: entry field, selection list, options, controls."""
         pad = {"padx": 10, "pady": 6}
