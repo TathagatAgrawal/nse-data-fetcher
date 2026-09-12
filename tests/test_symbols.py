@@ -2,7 +2,18 @@
 
 import pytest
 
+import symbols
 from symbols import SymbolNotFoundError, SymbolResolver
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Stub out the live NSE equity fetch so tests never hit the network.
+
+    Individual tests override this via monkeypatch.setattr(symbols, ...) to
+    simulate NSE being reachable.
+    """
+    monkeypatch.setattr(symbols, "fetch_equity_symbols", lambda: [])
 
 
 @pytest.fixture
@@ -67,3 +78,36 @@ def test_multi_word_input_does_not_fall_back(resolver):
     """A multi-word input that isn't a known name raises, rather than guessing a bad ticker."""
     with pytest.raises(SymbolNotFoundError):
         resolver.resolve("SOME RANDOM THING")
+
+
+def test_untabulated_ticker_confirmed_by_live_nse_list(monkeypatch, resolver):
+    """When NSE is reachable, a real but untabulated ticker resolves via the live list."""
+    monkeypatch.setattr(symbols, "fetch_equity_symbols", lambda: ["IRCTC", "TATAMOTORS"])
+    result = resolver.resolve("IRCTC")
+    assert result.ticker == "IRCTC.NS"
+    assert result.instrument_type == "equity"
+
+
+def test_ticker_shaped_input_rejected_when_absent_from_live_nse_list(monkeypatch, resolver):
+    """When NSE is reachable, a ticker-shaped input it doesn't recognize is rejected, not guessed."""
+    monkeypatch.setattr(symbols, "fetch_equity_symbols", lambda: ["IRCTC", "TATAMOTORS"])
+    with pytest.raises(SymbolNotFoundError) as exc_info:
+        resolver.resolve("ZZZNOTREAL")
+    assert exc_info.value.suggestions == []
+
+
+def test_typo_of_live_only_symbol_gets_suggestion(monkeypatch, resolver):
+    """A near-miss of a real, untabulated NSE symbol is suggested from the live list."""
+    monkeypatch.setattr(symbols, "fetch_equity_symbols", lambda: ["IRCTC", "TATAMOTORS"])
+    with pytest.raises(SymbolNotFoundError) as exc_info:
+        resolver.resolve("IRCTD")
+    assert "IRCTC" in exc_info.value.suggestions
+
+
+def test_suggest_includes_live_equity_symbols(monkeypatch, resolver):
+    """suggest() merges live NSE symbols with the bundled table, without duplicates."""
+    monkeypatch.setattr(symbols, "fetch_equity_symbols", lambda: ["TATAPOWER", "TATACHEM"])
+    suggestions = resolver.suggest("TATA")
+    assert "TATAMOTORS" in suggestions  # from the bundled table
+    assert "TATAPOWER" in suggestions  # from the live list
+    assert suggestions.count("TATAMOTORS") == 1

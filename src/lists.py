@@ -1,9 +1,11 @@
 """Resolves a stock-list name to its member symbols.
 
-Two sources are merged: bundled index-constituent CSVs shipped with the app
-(NIFTY 50, NIFTY BANK, SENSEX, ...), and the user's own custom lists, which
-live as separate sheets in a single, user-visible workbook (My Lists.xlsx)
-so the user can view/edit them directly in Excel (see docs/DESIGN.md §9).
+Three sources are merged: a best-effort live fetch of NSE's own index
+constituents (see nse_indices.py), bundled index-constituent CSVs shipped
+with the app as an offline fallback (NIFTY 50, NIFTY BANK, SENSEX, ...),
+and the user's own custom lists, which live as separate sheets in a single,
+user-visible workbook (My Lists.xlsx) so the user can view/edit them
+directly in Excel (see docs/DESIGN.md §9).
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
+
+from nse_indices import fetch_index_constituents, fetch_index_names
 
 BUNDLED_LISTS_DIR = Path(__file__).parent / "lists"
 BUNDLED_META_PATH = BUNDLED_LISTS_DIR / "meta.json"
@@ -52,6 +56,11 @@ class ListResolver:
             self._bundled_meta = json.loads((bundled_dir / "meta.json").read_text())
         except FileNotFoundError:
             self._bundled_meta = {}
+        # Cached per instance so repeated lookups (e.g. autocomplete on every
+        # keystroke) don't re-hit the network -- None means "not fetched yet",
+        # distinct from an empty list, which means "fetched and unreachable".
+        self._live_index_names_cache: list[str] | None = None
+        self._live_constituents_cache: dict[str, list[str]] = {}
 
     def bundled_list_names(self) -> list[str]:
         """Return the display names of every bundled index list, e.g. 'NIFTY 50 (as of Mar 2026)'."""
@@ -71,15 +80,30 @@ class ListResolver:
             wb.close()
 
     def all_list_names(self) -> list[str]:
-        """Return every list name (bundled + custom) for the entry field's autocomplete."""
-        return list(self._bundled_meta.keys()) + self.custom_list_names()
+        """Return every list name (bundled + live NSE indices + custom) for the entry field's autocomplete."""
+        seen = {name.upper() for name in self._bundled_meta}
+        names = list(self._bundled_meta.keys())
+        for name in self._live_index_names():
+            if name.upper() not in seen:
+                seen.add(name.upper())
+                names.append(name)
+        names.extend(self.custom_list_names())
+        return names
 
     def resolve(self, name: str) -> list[str]:
-        """Return the member symbols for a bundled or custom list name.
+        """Return the member symbols for a bundled, live-NSE-index, or custom list name.
 
-        Raises ListNotFoundError if the name matches neither.
+        A bundled index name is refreshed from NSE's live constituent list
+        first, falling back to the bundled (possibly stale) CSV if that
+        fails or NSE is unreachable. A name that isn't bundled or a saved
+        custom list is tried as a live NSE index name as a last resort, so
+        e.g. "NIFTY AUTO" resolves even though it isn't one of the three
+        bundled lists. Raises ListNotFoundError if nothing matches.
         """
         if name in self._bundled_meta:
+            live_symbols = self._live_constituents(name)
+            if live_symbols:
+                return live_symbols
             return self._read_symbol_column(self._bundled_dir / self._bundled_meta[name]["file"])
 
         if self._workbook_path.exists():
@@ -95,7 +119,23 @@ class ListResolver:
                 finally:
                     wb.close()
 
+        live_symbols = self._live_constituents(name)
+        if live_symbols:
+            return live_symbols
+
         raise ListNotFoundError(name)
+
+    def _live_index_names(self) -> list[str]:
+        """Fetch and cache every live NSE index name for this resolver's lifetime."""
+        if self._live_index_names_cache is None:
+            self._live_index_names_cache = fetch_index_names()
+        return self._live_index_names_cache
+
+    def _live_constituents(self, name: str) -> list[str]:
+        """Fetch and cache an NSE index's live member symbols for this resolver's lifetime."""
+        if name not in self._live_constituents_cache:
+            self._live_constituents_cache[name] = fetch_index_constituents(name)
+        return self._live_constituents_cache[name]
 
     def save_custom_list(self, name: str, symbols: list[str]) -> None:
         """Write `symbols` as a sheet named `name` in My Lists.xlsx, overwriting any existing sheet.

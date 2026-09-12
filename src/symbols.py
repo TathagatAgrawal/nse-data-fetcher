@@ -3,6 +3,9 @@
 The lookup table is a bundled CSV (symbols_table.csv) mapping the names a
 non-technical user would type -- "RELIANCE", "NIFTY 50" -- to the ticker
 syntax a data source actually expects, plus which adapter should serve it.
+For anything not in that table, a best-effort live fetch of NSE's full
+equity list (see nse_equities.py) is used to confirm or reject a guessed
+ticker instead of accepting any ticker-shaped input unchecked.
 """
 
 from __future__ import annotations
@@ -12,6 +15,8 @@ import re
 from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
+
+from nse_equities import fetch_equity_symbols
 
 SYMBOLS_TABLE_PATH = Path(__file__).parent / "symbols_table.csv"
 
@@ -57,6 +62,10 @@ class SymbolResolver:
                     adapter=row["adapter"].strip(),
                     instrument_type=row["instrument_type"].strip(),
                 )
+        # Cached per instance so repeated lookups (e.g. autocomplete on every
+        # keystroke) don't re-hit the network -- None means "not fetched yet",
+        # distinct from an empty list, which means "fetched and unreachable".
+        self._live_equity_symbols_cache: list[str] | None = None
 
     def all_names(self) -> list[str]:
         """Return every known display name, for autocomplete suggestions."""
@@ -69,10 +78,13 @@ class SymbolResolver:
         the input is a close typo of a known name, raise SymbolNotFoundError
         with that suggestion rather than guessing wrong. Otherwise, if the
         input is shaped like a plain ticker (e.g. "SBI", "IRCTC") -- not a
-        multi-word index/list name -- treat it as a real but untabulated NSE
-        equity symbol and try ticker.NS; whether it's actually a valid symbol
-        is then discovered at fetch time (via NoDataError), same as any other
-        symbol.
+        multi-word index/list name -- it's checked against a live fetch of
+        NSE's full equity list: a real, current symbol resolves immediately;
+        one NSE doesn't recognize gets a suggestion from that same live list
+        instead of a blind guess. If NSE is unreachable, this falls back to
+        the old behavior of accepting any ticker-shaped input unchecked --
+        whether it's actually valid is then discovered at fetch time (via
+        NoDataError), same as any other symbol.
         """
         key = query.strip().upper()
         match = self._by_name.get(key)
@@ -89,22 +101,46 @@ class SymbolResolver:
             raise SymbolNotFoundError(query, [self._by_name[s].display_name for s in suggestions])
 
         if _RAW_TICKER_PATTERN.match(key):
-            return ResolvedSymbol(display_name=key, ticker=f"{key}.NS", adapter="yfinance", instrument_type="equity")
+            live_symbols = self._live_equity_symbols()
+            if not live_symbols or key in live_symbols:
+                return ResolvedSymbol(
+                    display_name=key, ticker=f"{key}.NS", adapter="yfinance", instrument_type="equity"
+                )
+            # A lower cutoff is safe here (unlike the 0.85 above): this only
+            # ever affects which suggestion accompanies a rejection, since
+            # key is already confirmed absent from the live list -- it can't
+            # cause a valid, distinct ticker to be wrongly rejected.
+            live_suggestions = get_close_matches(key, live_symbols, n=3, cutoff=0.8)
+            raise SymbolNotFoundError(query, live_suggestions)
 
         raise SymbolNotFoundError(query, [])
 
     def suggest(self, prefix: str, limit: int = 10) -> list[str]:
-        """Return display names starting with or containing the given prefix.
+        """Return names starting with or containing the given prefix.
 
-        Used to drive the entry field's autocomplete dropdown as the user types.
+        Draws from both the bundled table and a live fetch of NSE's full
+        equity list (falling back to just the bundled table if that fetch
+        fails), to drive the entry field's autocomplete dropdown.
         """
         prefix = prefix.strip().upper()
         if not prefix:
             return []
-        starts_with = [s.display_name for s in self._by_name.values() if s.display_name.upper().startswith(prefix)]
-        contains = [
-            s.display_name
-            for s in self._by_name.values()
-            if prefix in s.display_name.upper() and not s.display_name.upper().startswith(prefix)
-        ]
+        seen: set[str] = set()
+        starts_with = []
+        contains = []
+        for name in self.all_names() + self._live_equity_symbols():
+            upper = name.upper()
+            if upper in seen:
+                continue
+            seen.add(upper)
+            if upper.startswith(prefix):
+                starts_with.append(name)
+            elif prefix in upper:
+                contains.append(name)
         return (starts_with + contains)[:limit]
+
+    def _live_equity_symbols(self) -> list[str]:
+        """Fetch and cache every live NSE-listed equity symbol for this resolver's lifetime."""
+        if self._live_equity_symbols_cache is None:
+            self._live_equity_symbols_cache = fetch_equity_symbols()
+        return self._live_equity_symbols_cache
