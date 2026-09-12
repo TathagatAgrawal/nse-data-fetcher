@@ -1,0 +1,5 @@
+{
+  "NIFTY 50": {"file": "NIFTY_50.csv", "last_updated": "2026-09-12"},
+  "NIFTY BANK": {"file": "NIFTY_BANK.csv", "last_updated": "2026-09-12"},
+  "SENSEX": {"file": "SENSEX.csv", "last_updated": "2026-09-12"}
+}

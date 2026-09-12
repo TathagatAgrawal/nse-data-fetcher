@@ -1,0 +1,63 @@
+name,ticker,adapter,instrument_type
+RELIANCE,RELIANCE.NS,yfinance,equity
+TCS,TCS.NS,yfinance,equity
+HDFCBANK,HDFCBANK.NS,yfinance,equity
+ICICIBANK,ICICIBANK.NS,yfinance,equity
+INFY,INFY.NS,yfinance,equity
+INFOSYS,INFY.NS,yfinance,equity
+HINDUNILVR,HINDUNILVR.NS,yfinance,equity
+ITC,ITC.NS,yfinance,equity
+SBIN,SBIN.NS,yfinance,equity
+BHARTIARTL,BHARTIARTL.NS,yfinance,equity
+KOTAKBANK,KOTAKBANK.NS,yfinance,equity
+LT,LT.NS,yfinance,equity
+AXISBANK,AXISBANK.NS,yfinance,equity
+BAJFINANCE,BAJFINANCE.NS,yfinance,equity
+ASIANPAINT,ASIANPAINT.NS,yfinance,equity
+MARUTI,MARUTI.NS,yfinance,equity
+HCLTECH,HCLTECH.NS,yfinance,equity
+SUNPHARMA,SUNPHARMA.NS,yfinance,equity
+TITAN,TITAN.NS,yfinance,equity
+ULTRACEMCO,ULTRACEMCO.NS,yfinance,equity
+NESTLEIND,NESTLEIND.NS,yfinance,equity
+WIPRO,WIPRO.NS,yfinance,equity
+ONGC,ONGC.NS,yfinance,equity
+NTPC,NTPC.NS,yfinance,equity
+POWERGRID,POWERGRID.NS,yfinance,equity
+M&M,M&M.NS,yfinance,equity
+MAHINDRA,M&M.NS,yfinance,equity
+TATAMOTORS,TATAMOTORS.NS,yfinance,equity
+TATASTEEL,TATASTEEL.NS,yfinance,equity
+ADANIENT,ADANIENT.NS,yfinance,equity
+ADANIPORTS,ADANIPORTS.NS,yfinance,equity
+JSWSTEEL,JSWSTEEL.NS,yfinance,equity
+COALINDIA,COALINDIA.NS,yfinance,equity
+BAJAJFINSV,BAJAJFINSV.NS,yfinance,equity
+TECHM,TECHM.NS,yfinance,equity
+HDFCLIFE,HDFCLIFE.NS,yfinance,equity
+DRREDDY,DRREDDY.NS,yfinance,equity
+GRASIM,GRASIM.NS,yfinance,equity
+CIPLA,CIPLA.NS,yfinance,equity
+EICHERMOT,EICHERMOT.NS,yfinance,equity
+BRITANNIA,BRITANNIA.NS,yfinance,equity
+DIVISLAB,DIVISLAB.NS,yfinance,equity
+APOLLOHOSP,APOLLOHOSP.NS,yfinance,equity
+INDUSINDBK,INDUSINDBK.NS,yfinance,equity
+SBILIFE,SBILIFE.NS,yfinance,equity
+BPCL,BPCL.NS,yfinance,equity
+HEROMOTOCO,HEROMOTOCO.NS,yfinance,equity
+UPL,UPL.NS,yfinance,equity
+TATACONSUM,TATACONSUM.NS,yfinance,equity
+BAJAJ-AUTO,BAJAJ-AUTO.NS,yfinance,equity
+HINDALCO,HINDALCO.NS,yfinance,equity
+LTIM,LTIM.NS,yfinance,equity
+NIFTY 50,^NSEI,yfinance,index
+NIFTY,^NSEI,yfinance,index
+NIFTY50,^NSEI,yfinance,index
+BANK NIFTY,^NSEBANK,yfinance,index
+NIFTY BANK,^NSEBANK,yfinance,index
+BANKNIFTY,^NSEBANK,yfinance,index
+SENSEX,^BSESN,yfinance,index
+NIFTY NEXT 50,^NSMIDCP,yfinance,index
+NIFTY MIDCAP 100,^CRSMID,yfinance,index
+INDIA VIX,^INDIAVIX,yfinance,index
