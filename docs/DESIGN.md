@@ -107,14 +107,32 @@ The GUI search box does a fuzzy/prefix match against this table as the user type
 
 Instead of adding stocks one at a time, a user can type/select the name of a **list** and have it expand into all of that list's member symbols in one step. Two kinds of lists:
 
-- **Bundled index lists** — shipped with the app, covering common index constituents: NIFTY 50, NIFTY NEXT 50, NIFTY BANK, NIFTY 100, SENSEX, etc. Stored as one JSON/CSV file per list (`lists/NIFTY_50.csv` etc.), each just a flat list of the symbol names already used in the symbol lookup table (§7), so resolution is a two-step lookup: list name → member symbol names → tickers.
-- **User-defined custom lists** — the user builds a symbol selection in the UI (as in §9) and can click "Save as list...", name it (e.g. "MY WATCHLIST"), and it's persisted to a small local file (e.g. `~/.nse-data-fetcher/lists/custom/MY_WATCHLIST.json`) so it shows up alongside the bundled lists next time. Custom lists can be renamed/deleted from the same UI.
+- **Bundled index lists** — shipped with the app, covering common index constituents: NIFTY 50, NIFTY NEXT 50, NIFTY BANK, NIFTY 100, SENSEX, etc. Stored as one CSV file per list (`lists/NIFTY_50.csv` etc.), each just a flat list of the symbol names already used in the symbol lookup table (§7), so resolution is a two-step lookup: list name → member symbol names → tickers.
+- **User-defined custom lists** — all of the user's own lists live together in **one Excel workbook**, `My Lists.xlsx`, saved to a visible, ordinary folder (`~/Documents/NSE Data Fetcher/My Lists.xlsx`, alongside where downloads go by default) rather than a hidden config directory. Each **sheet is one list** — the sheet name is the list name (e.g. a sheet named "MY WATCHLIST"), and the sheet's `Symbol` column just lists the member symbols, one per row:
+
+  ```
+  Sheet: MY WATCHLIST         Sheet: SWING TRADES
+  ┌──────────┐                ┌──────────┐
+  │ Symbol   │                │ Symbol   │
+  ├──────────┤                ├──────────┤
+  │ RELIANCE │                │ TATASTEEL│
+  │ TCS      │                │ ADANIENT │
+  │ HDFCBANK │                └──────────┘
+  └──────────┘
+  ```
+
+  This is a deliberate design choice: because it's a plain workbook in a normal folder, the user can open it directly in Excel, add/remove rows on a sheet, add a whole new sheet for a new list, rename a sheet to rename a list, or delete a sheet to delete a list — no in-app editor is required for basic editing, though the app also provides one (below) for convenience.
 
 ```python
 class ListResolver:
     def resolve(self, list_name: str) -> list[str]:
-        """Returns the member symbol names for a bundled or custom list name."""
+        """Returns the member symbol names for a bundled list or a sheet
+        in the user's My Lists.xlsx workbook."""
 ```
+
+- **Saving from the app**: clicking "Save current selection as list..." prompts for a name, then opens `My Lists.xlsx` (creating it with a short instructional first sheet if it doesn't exist yet), writes the current symbols into a sheet with that name (overwriting it if the name already exists, after a confirm), and saves the workbook back to disk. Because the file is a normal, user-visible workbook, it's also possible the user has it open in Excel at the same time — if the save fails because the file is locked, the app shows: *"Please close 'My Lists.xlsx' in Excel, then try again."*
+- **Reading lists**: every time the entry field's autocomplete needs to know what lists exist (on startup, and after a save), the app re-reads `My Lists.xlsx` and lists every sheet name as an available custom list, alongside the bundled index lists. This means edits made directly in Excel (adding a sheet, editing rows) are picked up automatically the next time the app is opened — no import/sync step needed.
+- Blank rows or a header typo'd away are tolerated (first non-empty column is treated as the symbol column, blank rows skipped); a row whose text doesn't resolve to a known symbol is reported at list-load time rather than failing the whole list, e.g. *"List 'MY WATCHLIST' loaded 7 of 8 symbols. Couldn't recognize: 'RELAINCE' — check for a typo."*
 
 Typing a list name behaves exactly like the existing "+ Add" flow for a single symbol, just adding many rows at once — the user can still remove individual symbols afterward before downloading, or add more symbols/lists on top of it. Duplicate symbols (e.g. a user adds both "NIFTY 50" and "RELIANCE" individually) are silently de-duplicated before fetching, so no symbol is downloaded twice or gets two sheets.
 
@@ -156,7 +174,7 @@ Single-window form, no menus, no tabs:
 
 - Entry field: one autocomplete dropdown that suggests both individual symbols and list names (visually distinguished, e.g. lists shown in bold or with a small folder icon and a count, "NIFTY 50 — 50 stocks"); "+ Add" either appends one symbol row or expands a list into many rows at once. At least one symbol is required before Download is enabled.
 - Selection list: shows every resolved symbol individually (even ones added via a list) so the user can remove specific stocks after loading a list; long lists collapse to a scrollable area rather than growing the window unboundedly.
-- "Save current selection as list": prompts for a name and persists the current symbol selection as a reusable custom list (§8), so a user's own frequently-downloaded basket doesn't need to be rebuilt by hand each time.
+- "Save current selection as list": prompts for a name and persists the current symbol selection as a new sheet in the user's `My Lists.xlsx` workbook (§8), so a user's own frequently-downloaded basket doesn't need to be rebuilt by hand each time, and can hold multiple such lists side by side (one per sheet).
 - Interval: a small set of radio buttons (not a free-text field) — 5 min, 15 min, 1 hour, Daily — so users are never asked to type interval syntax.
 - Date pickers: calendar widgets (no manual date-format guessing), defaulting To-date to today and From-date to one year back (adjusted automatically — with a message — when the chosen interval can't support that far back, per §6).
 - Folder field: pre-filled with the OS's default Documents folder, with a native "Browse..." dialog.
@@ -185,6 +203,8 @@ Single-window form, no menus, no tabs:
 |-------------------------------------|--------------------------|
 | Symbol not found / no match          | "We couldn't find '<input>'. Try a name like RELIANCE, NIFTY 50, or TCS." |
 | List name not found / no match       | "We couldn't find a list called '<input>'. Try NIFTY 50, NIFTY BANK, or one of your saved lists." |
+| A row in a custom list doesn't resolve to a known symbol | "List 'MY WATCHLIST' loaded 7 of 8 symbols. Couldn't recognize: 'RELAINCE' — check for a typo." |
+| `My Lists.xlsx` is open in Excel when the app tries to save to it | "Please close 'My Lists.xlsx' in Excel, then try again." |
 | No internet connection               | "No internet connection. Please check your connection and try again." |
 | No data for the date range (e.g. holiday-only range, future dates) | "No trading data found for that date range." |
 | Date range too long for the chosen interval | "5-minute data is only available for the last 60 days. Download from 2026-07-14 to today instead?" (Yes clamps and continues, No lets the user change the interval or dates.) |
@@ -203,7 +223,7 @@ nse-data-fetcher/
 │   ├── main.py               # GUI entry point
 │   ├── symbols.py            # symbol lookup + fuzzy match
 │   ├── symbols_table.csv     # bundled name -> ticker/adapter mapping
-│   ├── lists.py               # ListResolver: bundled + custom list lookup
+│   ├── lists.py               # ListResolver: bundled CSVs + My Lists.xlsx
 │   ├── lists/                 # bundled index constituent lists
 │   │   ├── NIFTY_50.csv
 │   │   ├── NIFTY_BANK.csv
@@ -218,7 +238,7 @@ nse-data-fetcher/
 └── README.md
 ```
 
-Custom user-defined lists are **not** bundled with the app — they're written at runtime to a per-user config directory (e.g. `~/.nse-data-fetcher/lists/custom/` on macOS/Linux, `%APPDATA%\nse-data-fetcher\lists\custom\` on Windows), separate from the app's own installed files, so they survive an app update/reinstall.
+Custom user-defined lists are **not** bundled with the app — they live in `~/Documents/NSE Data Fetcher/My Lists.xlsx`, a normal, user-visible workbook (one sheet per list) separate from the app's own installed files, so they survive an app update/reinstall and can be opened and edited directly in Excel (§8).
 
 ## 14. Open questions / future scope
 
@@ -226,4 +246,5 @@ Custom user-defined lists are **not** bundled with the app — they're written a
 - BSE-only symbols and smaller-cap coverage may be inconsistent across data sources — acceptable gap for v1, documented in the README.
 - Is there a practical cap on how many symbols can go in one batch (e.g. 20) to keep a single download from taking too long / hitting rate limits? v1: no hard cap, but fetch sequentially with visible per-symbol progress so a large batch is at least transparent, not frozen.
 - How often should bundled index lists (NIFTY 50 etc.) be refreshed, and by whom? v1: manual refresh of the bundled CSVs as part of releases; no in-app auto-update from a live index-constituent source.
+- `My Lists.xlsx` location on Windows: `~/Documents/NSE Data Fetcher/` resolves the same way as on macOS (the OS's Documents folder), so no separate `%APPDATA%` path is needed for this file, unlike the earlier per-user config directory idea it replaces.
 - Possible v2: weekly/monthly intervals (trivial resample of daily), options data, CSV export option, remembering the user's last-used symbol list/interval between sessions, importing a custom list from a pasted comma-separated string or an existing Excel/CSV file.
