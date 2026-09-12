@@ -7,6 +7,7 @@ everything into one Excel workbook.
 
 from __future__ import annotations
 
+import logging
 import threading
 import tkinter as tk
 from datetime import date, timedelta
@@ -15,10 +16,13 @@ from tkinter import filedialog, messagebox, simpledialog
 
 from tkcalendar import DateEntry
 
+import applog
 from downloader import Entry, download_all, entry_from_symbol
 from importer import parse_file, parse_pasted_text
 from lists import ListNotFoundError, ListResolver, WorkbookLockedError, default_documents_dir
 from symbols import SymbolNotFoundError, SymbolResolver
+
+logger = logging.getLogger(__name__)
 
 INTERVAL_CHOICES = [("5 min", "5min"), ("15 min", "15min"), ("1 hour", "1hour"), ("Daily", "daily")]
 
@@ -49,6 +53,7 @@ class App(tk.Tk):
         import traceback
 
         traceback.print_exception(exc_type, exc_value, tb)
+        logger.error("Unhandled error in a GUI callback", exc_info=(exc_type, exc_value, tb))
         messagebox.showerror("Something went wrong", f"{exc_type.__name__}: {exc_value}")
 
     def _build_widgets(self):
@@ -367,4 +372,9 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    applog.setup_logging()
+    try:
+        App().mainloop()
+    except Exception:
+        logger.exception("Fatal startup error")
+        raise

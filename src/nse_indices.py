@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_index_names() -> list[str]:
@@ -26,6 +29,7 @@ def fetch_index_names() -> list[str]:
         payload = nsepython.nsefetch("https://www.nseindia.com/api/allIndices")
         return [row["index"] for row in payload["data"]]
     except Exception:
+        logger.warning("Live NSE index name fetch failed", exc_info=True)
         return []
 
 
@@ -50,4 +54,5 @@ def fetch_index_constituents(index_name: str) -> list[str]:
         rows = csv.DictReader(io.StringIO(response.text))
         return [row["Symbol"].strip() for row in rows if row.get("Symbol", "").strip()]
     except Exception:
+        logger.warning("Live NSE constituent fetch failed for %r", index_name, exc_info=True)
         return []

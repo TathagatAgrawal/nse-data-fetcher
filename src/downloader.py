@@ -6,6 +6,7 @@ could equally be driven from a script or test.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -17,6 +18,8 @@ from datasources.base import DataSourceError, FetchRequest, clamp_start_for_inte
 from datasources.yfinance_source import YFinanceSource
 from excel_writer import write_workbook
 from symbols import SymbolResolver
+
+logger = logging.getLogger(__name__)
 
 _ADAPTERS = {
     "yfinance": YFinanceSource(),
@@ -80,6 +83,10 @@ def download_all(
     for i, entry in enumerate(entries, start=1):
         if on_progress:
             on_progress(i, len(entries), entry.display_name)
+        logger.info(
+            "Fetching %s (%d/%d): ticker=%s adapter=%s interval=%s start=%s end=%s",
+            entry.display_name, i, len(entries), entry.ticker, entry.adapter, interval, effective_start, end,
+        )
         try:
             source = _ADAPTERS[entry.adapter]
             request = FetchRequest(
@@ -92,9 +99,16 @@ def download_all(
             df = source.get_ohlcv(request)
             data[entry.sheet_name] = df
             succeeded.append(entry.display_name)
+            logger.info("Fetched %s: %d rows", entry.display_name, len(df))
         except DataSourceError as exc:
+            # exc_info logs the full traceback -- exc.message is only the
+            # short, user-facing text shown in the app, which for e.g. a
+            # swallowed network/SSL error looks identical to a genuine
+            # "no data" result; the traceback is what actually tells them apart.
+            logger.warning("Failed to fetch %s (%s): %s", entry.display_name, entry.ticker, exc.message, exc_info=True)
             failed.append((entry.display_name, exc.message))
         except Exception as exc:
+            logger.warning("Failed to fetch %s (%s): %s", entry.display_name, entry.ticker, exc, exc_info=True)
             failed.append((entry.display_name, str(exc)))
 
     if len(entries) == 1:

@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 EQUITY_LIST_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
 
@@ -28,4 +31,5 @@ def fetch_equity_symbols() -> list[str]:
         rows = csv.DictReader(io.StringIO(response.text))
         return [row["SYMBOL"].strip() for row in rows if row.get("SYMBOL", "").strip()]
     except Exception:
+        logger.warning("Live NSE equity list fetch failed", exc_info=True)
         return []
