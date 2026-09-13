@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-09-13
+
+### Fixed
+
+- Intraday (5 min/15 min/1 hour) downloaded rows weren't reliably sorted by time within the same day -- the date and time were split into separate columns, and sorting only by the date-only column left same-day rows in no guaranteed order. Combined back into a single date+time column, which sorts correctly.
+- Yahoo Finance's intraday history limits (60 days for 5 min/15 min, 730 days for 1 hour) are measured back from *today*, not from the chosen end date -- a date range that was narrow enough but too far in the past was being sent through unclamped and failing outright. The app now clamps relative to today, matching Yahoo's actual behavior.
+- On Windows, the date pickers and the symbol lists rendered with a noticeably smaller font than the rest of the UI, and the bottom status/progress row could get clipped out of the window entirely. Both were caused by the plain Tk widgets mixed into the `customtkinter`-based UI not sharing its DPI-aware scaling; the window is now sized from its actual content instead of a fixed guess, and those widgets use the same scaled font as the rest of the app.
+
 ## [0.0.4] - 2026-09-13
 
 ### Added
