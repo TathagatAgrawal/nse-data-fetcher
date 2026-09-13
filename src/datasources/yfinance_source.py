@@ -52,7 +52,10 @@ class YFinanceSource(DataSource):
             # Kept as a single combined date+time column rather than split
             # into separate Date/Time columns -- splitting left "Date" as
             # date-only, so sorting by it alone didn't order rows within the
-            # same day by time at all.
-            df["Date"] = pd.to_datetime(df["Date"])
+            # same day by time at all. tz_localize(None) drops the tzinfo
+            # without shifting the wall-clock time (unlike tz_convert, which
+            # would convert to UTC first) -- openpyxl can't write a
+            # timezone-aware datetime to Excel at all, it raises ValueError.
+            df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
 
         return df.sort_values("Date").reset_index(drop=True)

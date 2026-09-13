@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Intraday range entirely outside Yahoo's window (e.g. a narrow 5-minute range from 6 months ago) → rejected with an explicit "5-minute data is only available for the last 60 days... pick a more recent range, or switch to Daily."
 - A help dialogue explaining the basic features, and common failures.
 
+### Fixed
+
+- Every intraday (5 min/15 min/1 hour) download failed at the very last step, after successfully fetching all its data: the combined date+time column introduced in 0.0.5 carried timezone info from Yahoo Finance, and openpyxl cannot write a timezone-aware datetime to Excel at all. The column is now converted to naive (tzinfo dropped, wall-clock time unchanged) before writing.
+- A real download failure showed a confusing, unrelated `NameError` instead of the actual error message, because the message was read from a variable inside a `lambda` scheduled to run later -- by the time it ran, Python had already cleared that variable, per its own except-block scoping rules. The message is now captured into a plain variable first.
+- The 0.0.5 intraday clamp fix used the *advertised* limit (60/730 days) rather than the real one: Yahoo checks against the exact current moment, but every date here is midnight-only, so a start of exactly today-60 was still rejected ("must be within the last 60 days") -- verified directly against Yahoo. The clamp now targets today-59/729, the boundary that actually works.
+
+Together, the first two bugs are almost certainly what produced a batch of many symbols "downloading" (the status line cycled through all of them) while every single one silently failed -- the real cause (a crash while writing the file, immediately after a successful fetch) was being replaced by an unrelated `NameError` and never surfaced to the user at all.
+
 ## [0.0.5] - 2026-09-13
 
 ### Fixed

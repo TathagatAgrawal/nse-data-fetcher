@@ -71,13 +71,21 @@ def clamp_start_for_interval(interval: str, start: date, end: date) -> tuple[dat
     because none of it falls within the last 60 days. So `earliest_allowed`
     is anchored to today, not to `end`.
 
+    The window is also one day narrower than advertised: Yahoo checks
+    against the exact current moment, but a start date is always midnight,
+    so "today minus 60 days" at 00:00 is already slightly *more* than 60
+    real days before "now" (which includes today's elapsed hours) --
+    verified directly, a start of exactly today-60 was rejected ("must be
+    within the last 60 days") while today-59 succeeded. Subtracting one
+    extra day keeps the clamped start safely inside the real boundary.
+
     Returns (possibly-adjusted start date, whether it was clamped) so callers
     can tell the user their range was shortened rather than silently doing it.
     """
     max_days = INTRADAY_LOOKBACK_DAYS.get(interval)
     if max_days is None:
         return start, False
-    earliest_allowed = date.today() - timedelta(days=max_days)
+    earliest_allowed = date.today() - timedelta(days=max_days - 1)
     if start < earliest_allowed:
         return earliest_allowed, True
     return start, False

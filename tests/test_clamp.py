@@ -25,12 +25,19 @@ def test_5min_within_limit_is_not_clamped():
     assert was_clamped is False
 
 
-def test_5min_beyond_limit_is_clamped_to_today_minus_60():
-    """A start date older than 60 days is clamped to exactly 60 days before today."""
+def test_5min_beyond_limit_is_clamped_to_today_minus_59():
+    """A start date older than the limit is clamped to 59 (not 60) days before today.
+
+    One day narrower than the advertised 60 -- verified directly against
+    Yahoo Finance that a start of exactly today-60 is still rejected
+    ("must be within the last 60 days"), since a start is always midnight
+    while Yahoo checks against the exact current moment; today-59 is the
+    actual, working boundary.
+    """
     start = TODAY - timedelta(days=200)
     end = TODAY - timedelta(days=100)
     clamped_start, was_clamped = clamp_start_for_interval("5min", start, end)
-    assert clamped_start == TODAY - timedelta(days=60)
+    assert clamped_start == TODAY - timedelta(days=59)
     assert was_clamped is True
 
 
@@ -40,13 +47,13 @@ def test_clamp_is_anchored_to_today_not_to_end():
     This is the actual bug: Yahoo's limit is "the last 60 days from now", not
     "60 days before whatever end date the user picked" -- a request whose
     start/end are both 6+ months ago must still be clamped forward to
-    today-60, not left untouched just because the *width* of the range is
+    today-59, not left untouched just because the *width* of the range is
     under 60 days.
     """
     start = TODAY - timedelta(days=200)
     end = TODAY - timedelta(days=170)  # only a 30-day-wide range, but old
     clamped_start, was_clamped = clamp_start_for_interval("5min", start, end)
-    assert clamped_start == TODAY - timedelta(days=60)
+    assert clamped_start == TODAY - timedelta(days=59)
     assert was_clamped is True
 
 
@@ -60,5 +67,5 @@ def test_1hour_uses_730_day_limit():
 
     old_start = TODAY - timedelta(days=800)
     clamped_start, was_clamped = clamp_start_for_interval("1hour", old_start, end)
-    assert clamped_start == TODAY - timedelta(days=730)
+    assert clamped_start == TODAY - timedelta(days=729)
     assert was_clamped is True

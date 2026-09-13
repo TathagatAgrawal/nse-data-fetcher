@@ -663,7 +663,14 @@ class App(ctk.CTk):
                 entries, interval, start, end, output_dir, filename=filename, on_progress=on_progress
             )
         except Exception as exc:
-            self.after(0, lambda: self._download_failed(str(exc)))
+            # Python deletes `exc` when the except block exits, so it can't
+            # be referenced from a lambda that self.after() runs later --
+            # doing so raised a NameError that both masked the real error
+            # and crashed this callback. Capturing the message into a plain
+            # local first avoids the dangling closure entirely.
+            message = str(exc)
+            logger.exception("Download pipeline raised unexpectedly")
+            self.after(0, lambda: self._download_failed(message))
             return
         self.after(0, lambda: self._download_finished(result))
 
