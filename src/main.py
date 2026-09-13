@@ -15,6 +15,7 @@ normal way CTk apps cover gaps in its widget set.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import tkinter as tk
 from datetime import date, timedelta
@@ -37,6 +38,11 @@ ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("blue")
 
 ICON_PATH = Path(__file__).parent / "assets" / "icon.png"
+# Kept as a real Markdown file rather than a string baked into this module
+# so it's easy for a developer to read/diff on its own -- update it
+# whenever the behavior it describes (interval limits, error messages,
+# settings, etc.) changes.
+HELP_PATH = Path(__file__).parent / "HELP.md"
 
 INTERVAL_CHOICES = [("5 min", "5min"), ("15 min", "15min"), ("1 hour", "1hour"), ("Daily", "daily")]
 
@@ -111,6 +117,43 @@ def _styled_listbox(parent, **kwargs) -> tk.Listbox:
         borderwidth=0,
         **kwargs,
     )
+
+
+_BOLD_PATTERN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _insert_markdown(textbox: ctk.CTkTextbox, markdown_text: str) -> None:
+    """Insert `markdown_text` into `textbox` with minimal Markdown rendering.
+
+    Only handles the small subset HELP.md actually uses -- '#'/'##'
+    headings and **bold** spans -- rather than pulling in a full Markdown
+    parser dependency for one help dialog. Anything else (table syntax,
+    links, etc.) is inserted as plain text.
+    """
+    # CTkTextbox.tag_config refuses a "font" option ("incompatible with
+    # scaling"); its underlying real tkinter.Text widget doesn't have that
+    # restriction, so tags are configured there directly instead.
+    real_textbox = textbox._textbox
+    real_textbox.tag_config("h1", font=ctk.CTkFont(size=18, weight="bold"))
+    real_textbox.tag_config("h2", font=ctk.CTkFont(size=15, weight="bold"))
+    real_textbox.tag_config("bold", font=ctk.CTkFont(size=13, weight="bold"))
+
+    for line in markdown_text.splitlines():
+        if line.startswith("## "):
+            textbox.insert("end", line[3:] + "\n", "h2")
+            continue
+        if line.startswith("# "):
+            textbox.insert("end", line[2:] + "\n", "h1")
+            continue
+        if line.startswith("- "):
+            line = "  • " + line[2:]
+
+        position = 0
+        for match in _BOLD_PATTERN.finditer(line):
+            textbox.insert("end", line[position : match.start()])
+            textbox.insert("end", match.group(1), "bold")
+            position = match.end()
+        textbox.insert("end", line[position:] + "\n")
 
 
 class App(ctk.CTk):
@@ -206,6 +249,9 @@ class App(ctk.CTk):
             side="left"
         )
         ctk.CTkButton(self._action_row, text="Settings...", command=self._open_settings_dialog).pack(
+            side="left", padx=(6, 0)
+        )
+        ctk.CTkButton(self._action_row, text="Help", width=60, command=self._open_help_dialog).pack(
             side="left", padx=(6, 0)
         )
 
@@ -556,6 +602,28 @@ class App(ctk.CTk):
             dialog.destroy()
 
         ctk.CTkButton(dialog, text="Save", command=save).pack(pady=16)
+
+    # -- Help -----------------------------------------------------------------------
+
+    def _open_help_dialog(self):
+        """Open a dialog rendering HELP.md: what the app supports and common failures."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Help")
+        dialog.geometry("560x520")
+
+        textbox = ctk.CTkTextbox(dialog, wrap="word")
+        textbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+        try:
+            content = HELP_PATH.read_text(encoding="utf-8")
+        except OSError:
+            content = "Couldn't load the help file."
+            logger.warning("Couldn't read HELP.md from %s", HELP_PATH, exc_info=True)
+
+        _insert_markdown(textbox, content)
+        textbox.configure(state="disabled")
+
+        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=(0, 10))
 
     # -- Download ---------------------------------------------------------------------
 
