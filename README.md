@@ -2,11 +2,11 @@
 
 A simple desktop app to download historical OHLCV (Open, High, Low, Close, Volume) data for Indian stocks and indices, and save it as an Excel workbook (one sheet per symbol). No coding or terminal required to use it.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the full design doc.
+See [docs/DESIGN.md](docs/DESIGN.md) for the full design doc and [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Status
 
-Core implementation in place: symbol/list resolution, multi-symbol batch download, selectable intervals, paste/file import, and a Tkinter GUI. Not yet packaged as a standalone `.app`/`.exe` (see Packaging below).
+Core implementation in place: symbol/list resolution, multi-symbol batch download, selectable intervals, paste/file import, and a Tkinter GUI, packaged as standalone Windows/macOS executables (see Packaging below and the [Releases page](https://github.com/TathagatAgrawal/nse-data-fetcher/releases)).
 
 ## Running it (for developers)
 
