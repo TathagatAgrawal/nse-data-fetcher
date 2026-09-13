@@ -17,19 +17,15 @@ import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
 from nse_indices import fetch_index_constituents, fetch_index_names
+from settings import default_documents_dir, get_lists_folder
 
 BUNDLED_LISTS_DIR = Path(__file__).parent / "lists"
 BUNDLED_META_PATH = BUNDLED_LISTS_DIR / "meta.json"
 
 
-def default_documents_dir() -> Path:
-    """Return the OS's Documents folder, which is the same call on macOS/Windows."""
-    return Path.home() / "Documents"
-
-
 def custom_lists_workbook_path() -> Path:
-    """Return the path to the user's My Lists.xlsx workbook."""
-    return default_documents_dir() / "NSE Data Fetcher" / "My Lists.xlsx"
+    """Return the path to the user's My Lists.xlsx workbook, honoring the configured lists folder."""
+    return get_lists_folder() / "My Lists.xlsx"
 
 
 class ListNotFoundError(Exception):
@@ -70,6 +66,15 @@ class ListResolver:
         the UI thread) is instant.
         """
         self._live_index_names()
+
+    def set_workbook_path(self, workbook_path: Path) -> None:
+        """Point this resolver at a different custom-lists workbook.
+
+        Used when the user changes the custom-lists folder in Settings
+        mid-session, rather than rebuilding the resolver (which would also
+        throw away its warmed live-index-name cache for no reason).
+        """
+        self._workbook_path = workbook_path
 
     def bundled_list_names(self) -> list[str]:
         """Return the display names of every bundled index list, e.g. 'NIFTY 50 (as of Mar 2026)'."""

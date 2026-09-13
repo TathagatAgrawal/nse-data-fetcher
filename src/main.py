@@ -17,9 +17,10 @@ from tkinter import filedialog, messagebox, simpledialog
 from tkcalendar import DateEntry
 
 import applog
+import settings
 from downloader import Entry, download_all, entry_from_symbol
 from importer import parse_file, parse_pasted_text
-from lists import ListNotFoundError, ListResolver, WorkbookLockedError, default_documents_dir
+from lists import ListNotFoundError, ListResolver, WorkbookLockedError
 from symbols import SymbolNotFoundError, SymbolResolver
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,9 @@ class App(tk.Tk):
         self._action_row = tk.Frame(self)
         self._action_row.pack(fill="x", **pad)
         tk.Button(self._action_row, text="Import / Paste...", command=self._open_import_dialog).pack(side="left")
+        tk.Button(self._action_row, text="Settings...", command=self._open_settings_dialog).pack(
+            side="left", padx=(6, 0)
+        )
 
         tk.Label(self, text="Selected symbols:").pack(anchor="w", **pad)
         list_frame = tk.Frame(self)
@@ -126,7 +130,7 @@ class App(tk.Tk):
         tk.Label(folder_row, text="Save to folder:").pack(anchor="w")
         folder_inner = tk.Frame(folder_row)
         folder_inner.pack(fill="x")
-        self.folder_var = tk.StringVar(value=str(default_documents_dir()))
+        self.folder_var = tk.StringVar(value=str(settings.get_download_folder()))
         tk.Entry(folder_inner, textvariable=self.folder_var).pack(side="left", fill="x", expand=True)
         tk.Button(folder_inner, text="Browse...", command=self._browse_folder).pack(side="left", padx=(6, 0))
 
@@ -310,6 +314,54 @@ class App(tk.Tk):
         chosen = filedialog.askdirectory(initialdir=self.folder_var.get())
         if chosen:
             self.folder_var.set(chosen)
+
+    # -- Settings ---------------------------------------------------------------------
+
+    def _open_settings_dialog(self):
+        """Open a small dialog to change the persistent default download/lists folders."""
+        dialog = tk.Toplevel(self)
+        dialog.title("Settings")
+        dialog.geometry("420x180")
+
+        tk.Label(dialog, text="Default download folder:").pack(anchor="w", padx=10, pady=(10, 0))
+        download_row = tk.Frame(dialog)
+        download_row.pack(fill="x", padx=10)
+        download_var = tk.StringVar(value=str(settings.get_download_folder()))
+        tk.Entry(download_row, textvariable=download_var).pack(side="left", fill="x", expand=True)
+
+        def browse_download():
+            """Fill the download-folder field via a native folder picker."""
+            chosen = filedialog.askdirectory(initialdir=download_var.get())
+            if chosen:
+                download_var.set(chosen)
+
+        tk.Button(download_row, text="Browse...", command=browse_download).pack(side="left", padx=(6, 0))
+
+        tk.Label(dialog, text="Custom lists folder:").pack(anchor="w", padx=10, pady=(10, 0))
+        lists_row = tk.Frame(dialog)
+        lists_row.pack(fill="x", padx=10)
+        lists_var = tk.StringVar(value=str(settings.get_lists_folder()))
+        tk.Entry(lists_row, textvariable=lists_var).pack(side="left", fill="x", expand=True)
+
+        def browse_lists():
+            """Fill the lists-folder field via a native folder picker."""
+            chosen = filedialog.askdirectory(initialdir=lists_var.get())
+            if chosen:
+                lists_var.set(chosen)
+
+        tk.Button(lists_row, text="Browse...", command=browse_lists).pack(side="left", padx=(6, 0))
+
+        def save():
+            """Persist both folders and apply them immediately, without needing a restart."""
+            download_path = Path(download_var.get().strip())
+            lists_path = Path(lists_var.get().strip())
+            settings.set_download_folder(download_path)
+            settings.set_lists_folder(lists_path)
+            self.folder_var.set(str(download_path))
+            self.list_resolver.set_workbook_path(lists_path / "My Lists.xlsx")
+            dialog.destroy()
+
+        tk.Button(dialog, text="Save", command=save).pack(pady=16)
 
     # -- Download ---------------------------------------------------------------------
 

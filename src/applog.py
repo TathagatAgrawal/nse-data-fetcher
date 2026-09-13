@@ -4,15 +4,17 @@ A --windowed PyInstaller build has no console, so uncaught exceptions and
 library warnings (yfinance's own network/parsing failures in particular --
 it logs to Python's `logging` module rather than raising for most fetch
 failures) are otherwise invisible to the user; there's nowhere for them to
-print to. Logging to a file next to My Lists.xlsx keeps a record a user can
-actually find and send back when something goes wrong.
+print to. Logging to a file in the app's own Documents subfolder (a fixed
+location, unlike the configurable download/lists folders in settings.py)
+keeps a record a user can actually find and send back when something goes
+wrong.
 """
 
 from __future__ import annotations
 
 import logging
 
-from lists import default_documents_dir
+from settings import default_documents_dir
 
 LOG_PATH = default_documents_dir() / "NSE Data Fetcher" / "app.log"
 

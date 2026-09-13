@@ -85,3 +85,17 @@ def test_overwriting_custom_list_replaces_contents(tmp_path):
     resolver.save_custom_list("MY WATCHLIST", ["TCS", "INFY"])
 
     assert resolver.resolve("MY WATCHLIST") == ["TCS", "INFY"]
+
+
+def test_set_workbook_path_redirects_custom_list_lookups(tmp_path, resolver):
+    """Changing the workbook path (e.g. via Settings) is picked up without rebuilding the resolver."""
+    old_path = tmp_path / "old" / "My Lists.xlsx"
+    new_path = tmp_path / "new" / "My Lists.xlsx"
+    ListResolver(workbook_path=old_path).save_custom_list("OLD LIST", ["RELIANCE"])
+    ListResolver(workbook_path=new_path).save_custom_list("NEW LIST", ["TCS"])
+
+    resolver.set_workbook_path(new_path)
+
+    assert resolver.resolve("NEW LIST") == ["TCS"]
+    with pytest.raises(ListNotFoundError):
+        resolver.resolve("OLD LIST")
