@@ -7,6 +7,7 @@ could equally be driven from a script or test.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -24,6 +25,14 @@ logger = logging.getLogger(__name__)
 _ADAPTERS = {
     "yfinance": YFinanceSource(),
 }
+
+_INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def sanitize_filename(name: str) -> str:
+    """Strip characters illegal in a filename on Windows (the most restrictive of the OSes this runs on)."""
+    cleaned = _INVALID_FILENAME_CHARS.sub("_", name).strip().rstrip(". ")
+    return cleaned or "NSE_Data"
 
 
 @dataclass(frozen=True)
@@ -66,9 +75,14 @@ def download_all(
     start: date,
     end: date,
     output_dir: Path,
+    filename: str | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> DownloadResult:
     """Fetch every entry and write the results into one workbook in output_dir.
+
+    filename, if given (and non-blank), names the output workbook (".xlsx"
+    is appended if missing); otherwise a name is generated from the
+    symbol(s) and date range, same as before this was configurable.
 
     on_progress, if given, is called as (index, total, display_name) before
     each fetch so the UI can show "Fetching X (i/n)...".
@@ -111,11 +125,15 @@ def download_all(
             logger.warning("Failed to fetch %s (%s): %s", entry.display_name, entry.ticker, exc, exc_info=True)
             failed.append((entry.display_name, str(exc)))
 
-    if len(entries) == 1:
-        filename = f"{entries[0].sheet_name}_{start.isoformat()}_{end.isoformat()}.xlsx"
+    if filename and filename.strip():
+        base_name = sanitize_filename(filename.strip())
+        if not base_name.lower().endswith(".xlsx"):
+            base_name += ".xlsx"
+    elif len(entries) == 1:
+        base_name = f"{entries[0].sheet_name}_{start.isoformat()}_{end.isoformat()}.xlsx"
     else:
-        filename = f"NSE_Data_{start.isoformat()}_{end.isoformat()}.xlsx"
-    output_path = Path(output_dir) / filename
+        base_name = f"NSE_Data_{start.isoformat()}_{end.isoformat()}.xlsx"
+    output_path = Path(output_dir) / base_name
 
     if data:
         write_workbook(data, output_path)

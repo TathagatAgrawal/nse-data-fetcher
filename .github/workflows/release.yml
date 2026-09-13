@@ -46,8 +46,10 @@ jobs:
         working-directory: src
         run: >
           pyinstaller --onedir --windowed --name "NSE Data Fetcher"
+          --icon "assets/icon.ico"
           --add-data "symbols_table.csv;."
           --add-data "lists;lists"
+          --add-data "assets;assets"
           main.py
 
       - name: Build (macOS)
@@ -55,8 +57,10 @@ jobs:
         working-directory: src
         run: >
           pyinstaller --onedir --windowed --name "NSE Data Fetcher"
+          --icon "assets/icon.icns"
           --add-data "symbols_table.csv:."
           --add-data "lists:lists"
+          --add-data "assets:assets"
           main.py
 
       - name: Package Windows build

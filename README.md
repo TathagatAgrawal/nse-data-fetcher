@@ -33,15 +33,15 @@ python -m pytest tests/
 
 ## Packaging as a standalone app
 
-The plan (§13 of the design doc) is to use PyInstaller, run separately on each target OS (it does not cross-compile). `symbols_table.csv` and the bundled `lists/` folder are plain data files, not Python modules, so PyInstaller won't pick them up on its own -- they must be passed explicitly via `--add-data`, or `SymbolResolver`/`ListResolver` will raise `FileNotFoundError` at startup looking for them inside the `_MEIxxxxx` temp extraction folder. The `--add-data SRC:DEST` separator is `:` on macOS/Linux and `;` on Windows:
+The plan (§13 of the design doc) is to use PyInstaller, run separately on each target OS (it does not cross-compile). `symbols_table.csv`, the bundled `lists/` folder, and the `assets/` icon files are plain data files, not Python modules, so PyInstaller won't pick them up on its own -- they must be passed explicitly via `--add-data`, or `SymbolResolver`/`ListResolver` will raise `FileNotFoundError` at startup looking for them inside the `_MEIxxxxx` temp extraction folder. The `--add-data SRC:DEST` separator is `:` on macOS/Linux and `;` on Windows. `--icon` sets the app's icon in Finder/Explorer/the Dock/taskbar -- it needs a `.icns` file on macOS and a `.ico` file on Windows (both already generated at `src/assets/`):
 
 ```bash
 pip install pyinstaller
 cd src
 # macOS/Linux:
-pyinstaller --onedir --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv:." --add-data "lists:lists" main.py
+pyinstaller --onedir --windowed --name "NSE Data Fetcher" --icon "assets/icon.icns" --add-data "symbols_table.csv:." --add-data "lists:lists" --add-data "assets:assets" main.py
 # Windows:
-pyinstaller --onedir --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv;." --add-data "lists;lists" main.py
+pyinstaller --onedir --windowed --name "NSE Data Fetcher" --icon "assets/icon.ico" --add-data "symbols_table.csv;." --add-data "lists;lists" --add-data "assets;assets" main.py
 ```
 
 Use `--onedir`, not `--onefile`: a onefile build has to re-extract its entire archive to a fresh temp folder on *every* launch, which is the main reason it's slow to start -- onedir pays that cost once (when it's built), then launches directly from the already-unpacked folder. Zip the resulting `dist/NSE Data Fetcher/` folder (macOS: the `dist/NSE Data Fetcher.app` bundle) for distribution -- see `.github/workflows/release.yml`, which already does this.

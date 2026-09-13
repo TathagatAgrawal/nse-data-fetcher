@@ -1,8 +1,15 @@
-"""Tkinter desktop app: NSE Data Fetcher.
+"""CustomTkinter desktop app: NSE Data Fetcher.
 
 A single-window form (per docs/DESIGN.md §11) that lets a non-technical user
 add stocks/indices/lists, pick an interval and date range, and download
 everything into one Excel workbook.
+
+Built on customtkinter (a themed wrapper around Tkinter) for a modern,
+dark-mode-aware look. customtkinter has no listbox or date-picker widget of
+its own, so the suggestions/selection lists stay plain tk.Listbox (styled to
+match the CTk theme's colors) and the date fields stay tkcalendar's
+DateEntry -- both mixed into an otherwise CTk-styled window, which is the
+normal way CTk apps cover gaps in its widget set.
 """
 
 from __future__ import annotations
@@ -12,8 +19,9 @@ import threading
 import tkinter as tk
 from datetime import date, timedelta
 from pathlib import Path
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox
 
+import customtkinter as ctk
 from tkcalendar import DateEntry
 
 import applog
@@ -25,21 +33,107 @@ from symbols import SymbolNotFoundError, SymbolResolver
 
 logger = logging.getLogger(__name__)
 
+ctk.set_appearance_mode("system")
+ctk.set_default_color_theme("blue")
+
+ICON_PATH = Path(__file__).parent / "assets" / "icon.png"
+
 INTERVAL_CHOICES = [("5 min", "5min"), ("15 min", "15min"), ("1 hour", "1hour"), ("Daily", "daily")]
 
 
-class App(tk.Tk):
+def _theme_color(pair: tuple[str, str]) -> str:
+    """Pick the (light, dark) value from a CTk theme color pair for the current appearance mode.
+
+    Plain tk widgets (the listboxes below) don't auto-adapt to light/dark
+    like CTk widgets do, so their colors are resolved once, up front, from
+    the same theme CTk itself is using -- keeping them visually consistent
+    with the rest of the window even though they're not CTk widgets.
+    """
+    return pair[0] if ctk.get_appearance_mode() == "Light" else pair[1]
+
+
+def _fix_dateentry_dropdown_closing(date_entry: DateEntry) -> None:
+    """Work around two CustomTkinter/tkcalendar focus conflicts that closed or froze the calendar.
+
+    1. CTk.__init__ installs `self.bind_all("<Button-1>", ...)` (to let
+       clicking outside a CTkEntry remove its focus highlight), which calls
+       `event.widget.focus_set()` for every left-click app-wide. When the
+       click is on DateEntry's own drop-down arrow, that fires *after*
+       tkcalendar's own handler has opened the calendar and focused it,
+       immediately stealing focus back to the DateEntry -- so the
+       calendar's <FocusOut> handler withdraws it in the same click, before
+       it's ever visibly open. Fixed by binding an extra <ButtonPress-1>
+       handler on the DateEntry that returns "break", stopping the event
+       from reaching bind_all's "all" bindtag (tkcalendar's own handler is
+       bound first, so it still runs before this).
+
+    2. Separately, clicking the calendar's own month/year "<"/">" nav
+       buttons closes it too, unrelated to CTk: ttk.Button's default click
+       handling calls focus_set() on itself, which moves focus away from
+       the calendar frame tkcalendar expects to hold it, so its <FocusOut>
+       handler withdraws the popup -- even though the month/year *does*
+       change underneath. Fixed by intercepting each nav button's own
+       <ButtonPress-1> at the widget-instance bindtag (which runs before
+       the button's class bindtag, where the default focus-taking click
+       handling lives) to invoke it manually and return "break", skipping
+       the class handler -- and the focus-taking -- entirely.
+    """
+    date_entry.bind("<ButtonPress-1>", lambda _event: "break", add="+")
+
+    def intercept_click(button):
+        """Invoke `button`'s command directly, then block its default (focus-taking) click handling."""
+
+        def handler(_event):
+            button.after_idle(button.invoke)
+            return "break"
+
+        button.bind("<ButtonPress-1>", handler)
+
+    calendar = date_entry._calendar
+    for nav_button_name in ("_l_month", "_r_month", "_l_year", "_r_year"):
+        intercept_click(getattr(calendar, nav_button_name))
+
+
+def _styled_listbox(parent, **kwargs) -> tk.Listbox:
+    """Create a tk.Listbox colored to match the current CTk theme."""
+    entry_theme = ctk.ThemeManager.theme["CTkEntry"]
+    button_theme = ctk.ThemeManager.theme["CTkButton"]
+    return tk.Listbox(
+        parent,
+        bg=_theme_color(entry_theme["fg_color"]),
+        fg=_theme_color(entry_theme["text_color"]),
+        selectbackground=_theme_color(button_theme["fg_color"]),
+        selectforeground=_theme_color(button_theme["text_color"]),
+        highlightthickness=1,
+        highlightbackground=_theme_color(entry_theme["border_color"]),
+        highlightcolor=_theme_color(entry_theme["border_color"]),
+        relief="flat",
+        borderwidth=0,
+        **kwargs,
+    )
+
+
+class App(ctk.CTk):
     """The application's single top-level window."""
 
     def __init__(self):
         """Build all widgets and load the symbol/list resolvers."""
         super().__init__()
         self.title("NSE Data Fetcher")
-        self.geometry("560x620")
+        self.geometry("580x660")
+        try:
+            self.iconphoto(True, tk.PhotoImage(file=str(ICON_PATH)))
+        except tk.TclError:
+            logger.warning("Couldn't load app icon from %s", ICON_PATH, exc_info=True)
 
         self.symbol_resolver = SymbolResolver()
         self.list_resolver = ListResolver()
         self.entries: list[Entry] = []
+        # Set right before an arrow-key press programmatically changes the
+        # suggestions listbox's selection, so _on_suggestion_selected (bound
+        # to <<ListboxSelect>>, which fires for that too) knows not to treat
+        # it as a commit the way an actual mouse click would be.
+        self._suppress_suggestion_commit = False
 
         self._build_widgets()
 
@@ -68,83 +162,111 @@ class App(tk.Tk):
         """Lay out the single-window form: entry field, selection list, options, controls."""
         pad = {"padx": 10, "pady": 6}
 
-        tk.Label(self, text="Add a stock, index, or a saved list:").pack(anchor="w", **pad)
-        entry_row = tk.Frame(self)
+        ctk.CTkLabel(self, text="Add a stock, index, or a saved list:").pack(anchor="w", **pad)
+        entry_row = ctk.CTkFrame(self, fg_color="transparent")
         entry_row.pack(fill="x", **pad)
         self.entry_var = tk.StringVar()
-        self.entry_box = tk.Entry(entry_row, textvariable=self.entry_var, width=35)
+        self.entry_box = ctk.CTkEntry(entry_row, textvariable=self.entry_var, width=350)
         self.entry_box.pack(side="left", fill="x", expand=True)
         self.entry_box.bind("<KeyRelease>", self._on_entry_keyrelease)
-        self.entry_box.bind("<Return>", lambda e: self._add_from_entry())
-        tk.Button(entry_row, text="+ Add", command=self._add_from_entry).pack(side="left", padx=(6, 0))
-
-        # Suggestions appear here as the user types; hidden (not packed) when empty.
-        self.suggestions_listbox = tk.Listbox(self, height=5)
-        self.suggestions_listbox.bind("<<ListboxSelect>>", self._on_suggestion_selected)
-
-        self._action_row = tk.Frame(self)
-        self._action_row.pack(fill="x", **pad)
-        tk.Button(self._action_row, text="Import / Paste...", command=self._open_import_dialog).pack(side="left")
-        tk.Button(self._action_row, text="Settings...", command=self._open_settings_dialog).pack(
+        self.entry_box.bind("<Return>", self._on_entry_return)
+        self.entry_box.bind("<Down>", self._on_entry_arrow)
+        self.entry_box.bind("<Up>", self._on_entry_arrow)
+        ctk.CTkButton(entry_row, text="+ Add", width=70, command=self._add_from_entry).pack(
             side="left", padx=(6, 0)
         )
 
-        tk.Label(self, text="Selected symbols:").pack(anchor="w", **pad)
-        list_frame = tk.Frame(self)
-        list_frame.pack(fill="both", expand=True, padx=10)
-        scrollbar = tk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
-        self.selection_listbox = tk.Listbox(
-            list_frame, selectmode="extended", yscrollcommand=scrollbar.set, height=8
-        )
-        self.selection_listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.selection_listbox.yview)
+        # Suggestions appear here as the user types; hidden (not packed) when empty.
+        self.suggestions_listbox = _styled_listbox(self, height=5)
+        self.suggestions_listbox.bind("<<ListboxSelect>>", self._on_suggestion_selected)
 
-        selection_buttons = tk.Frame(self)
+        self._action_row = ctk.CTkFrame(self, fg_color="transparent")
+        self._action_row.pack(fill="x", **pad)
+        ctk.CTkButton(self._action_row, text="Import / Paste...", command=self._open_import_dialog).pack(
+            side="left"
+        )
+        ctk.CTkButton(self._action_row, text="Settings...", command=self._open_settings_dialog).pack(
+            side="left", padx=(6, 0)
+        )
+
+        ctk.CTkLabel(self, text="Selected symbols:").pack(anchor="w", **pad)
+        list_frame = ctk.CTkFrame(self, fg_color="transparent")
+        list_frame.pack(fill="both", expand=True, padx=10)
+        scrollbar = ctk.CTkScrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        self.selection_listbox = _styled_listbox(list_frame, selectmode="extended", height=8)
+        self.selection_listbox.config(yscrollcommand=scrollbar.set)
+        self.selection_listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.configure(command=self.selection_listbox.yview)
+
+        selection_buttons = ctk.CTkFrame(self, fg_color="transparent")
         selection_buttons.pack(fill="x", padx=10, pady=(2, 6))
-        tk.Button(selection_buttons, text="Remove selected", command=self._remove_selected).pack(side="left")
-        tk.Button(
+        ctk.CTkButton(selection_buttons, text="Remove selected", command=self._remove_selected).pack(
+            side="left"
+        )
+        ctk.CTkButton(
             selection_buttons, text="Save current selection as list...", command=self._save_as_list
         ).pack(side="left", padx=(6, 0))
 
-        interval_row = tk.Frame(self)
+        interval_row = ctk.CTkFrame(self, fg_color="transparent")
         interval_row.pack(fill="x", **pad)
-        tk.Label(interval_row, text="Interval:").pack(side="left")
+        ctk.CTkLabel(interval_row, text="Interval:").pack(side="left")
         self.interval_var = tk.StringVar(value="daily")
         for label, value in INTERVAL_CHOICES:
-            tk.Radiobutton(interval_row, text=label, variable=self.interval_var, value=value).pack(side="left")
+            ctk.CTkRadioButton(interval_row, text=label, variable=self.interval_var, value=value).pack(
+                side="left", padx=(10, 0)
+            )
 
-        date_row = tk.Frame(self)
+        date_row = ctk.CTkFrame(self, fg_color="transparent")
         date_row.pack(fill="x", **pad)
-        tk.Label(date_row, text="From:").pack(side="left")
+        ctk.CTkLabel(date_row, text="From:").pack(side="left")
         self.from_date = DateEntry(date_row, date_pattern="dd/mm/yyyy")
         self.from_date.set_date(date.today() - timedelta(days=365))
         self.from_date.pack(side="left", padx=(4, 12))
-        tk.Label(date_row, text="To:").pack(side="left")
+        _fix_dateentry_dropdown_closing(self.from_date)
+        ctk.CTkLabel(date_row, text="To:").pack(side="left")
         self.to_date = DateEntry(date_row, date_pattern="dd/mm/yyyy")
         self.to_date.set_date(date.today())
         self.to_date.pack(side="left", padx=(4, 0))
+        _fix_dateentry_dropdown_closing(self.to_date)
 
-        folder_row = tk.Frame(self)
+        folder_row = ctk.CTkFrame(self, fg_color="transparent")
         folder_row.pack(fill="x", **pad)
-        tk.Label(folder_row, text="Save to folder:").pack(anchor="w")
-        folder_inner = tk.Frame(folder_row)
+        ctk.CTkLabel(folder_row, text="Save to folder:").pack(anchor="w")
+        folder_inner = ctk.CTkFrame(folder_row, fg_color="transparent")
         folder_inner.pack(fill="x")
         self.folder_var = tk.StringVar(value=str(settings.get_download_folder()))
-        tk.Entry(folder_inner, textvariable=self.folder_var).pack(side="left", fill="x", expand=True)
-        tk.Button(folder_inner, text="Browse...", command=self._browse_folder).pack(side="left", padx=(6, 0))
+        ctk.CTkEntry(folder_inner, textvariable=self.folder_var).pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(folder_inner, text="Browse...", width=90, command=self._browse_folder).pack(
+            side="left", padx=(6, 0)
+        )
 
-        self.download_button = tk.Button(self, text="Download", command=self._start_download, height=2)
+        filename_row = ctk.CTkFrame(self, fg_color="transparent")
+        filename_row.pack(fill="x", **pad)
+        ctk.CTkLabel(filename_row, text="File name (optional):").pack(anchor="w")
+        # No textvariable here deliberately -- CTkEntry's placeholder_text is
+        # unreliable when paired with a bound StringVar (the variable's real,
+        # empty value overwrites the placeholder as soon as it's shown), so
+        # this reads via .get() directly at download time instead.
+        self.filename_entry = ctk.CTkEntry(
+            filename_row, placeholder_text="Auto-generated from symbol(s) and dates"
+        )
+        self.filename_entry.pack(fill="x")
+
+        self.download_button = ctk.CTkButton(
+            self, text="Download", command=self._start_download, height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
         self.download_button.pack(fill="x", padx=10, pady=(10, 4))
 
         self.status_var = tk.StringVar(value="Ready.")
-        tk.Label(self, textvariable=self.status_var, anchor="w", wraplength=520, justify="left").pack(
+        ctk.CTkLabel(self, textvariable=self.status_var, anchor="w", wraplength=540, justify="left").pack(
             fill="x", padx=10, pady=(0, 10)
         )
 
     # -- Entry field / autocomplete --------------------------------------------------
 
-    def _on_entry_keyrelease(self, _event):
+    def _on_entry_keyrelease(self, event):
         """Refresh the suggestions listbox below the entry field as the user types.
 
         This is a plain Listbox we show/hide ourselves rather than a
@@ -153,6 +275,11 @@ class App(tk.Tk):
         keyboard focus on some platforms, which made the entry field appear
         to stop accepting input after a character or two.
         """
+        if event.keysym in ("Down", "Up", "Return"):
+            # These are handled by _on_entry_arrow/_on_entry_return instead;
+            # rebuilding the list here on their key-release would immediately
+            # wipe the highlight arrow navigation just set.
+            return
         text = self.entry_var.get()
         if not text.strip():
             self.suggestions_listbox.pack_forget()
@@ -168,8 +295,45 @@ class App(tk.Tk):
             self.suggestions_listbox.insert("end", s)
         self.suggestions_listbox.pack(fill="x", padx=10, before=self._action_row)
 
+    def _on_entry_arrow(self, event):
+        """Move the highlighted suggestion up/down with the arrow keys, without touching the typed text."""
+        if not self.suggestions_listbox.winfo_ismapped():
+            return
+        size = self.suggestions_listbox.size()
+        if size == 0:
+            return
+        current = self.suggestions_listbox.curselection()
+        index = current[0] if current else -1
+        if event.keysym == "Down":
+            index = 0 if index == -1 else min(index + 1, size - 1)
+        else:
+            index = size - 1 if index == -1 else max(index - 1, 0)
+        self._suppress_suggestion_commit = True
+        self.suggestions_listbox.selection_clear(0, "end")
+        self.suggestions_listbox.selection_set(index)
+        self.suggestions_listbox.activate(index)
+        self.suggestions_listbox.see(index)
+        return "break"  # don't let the entry field move its cursor/selection too
+
+    def _on_entry_return(self, _event):
+        """Add the arrow-highlighted suggestion if there is one, else treat the typed text as-is."""
+        if self.suggestions_listbox.winfo_ismapped():
+            selection = self.suggestions_listbox.curselection()
+            if selection:
+                self.entry_var.set(self.suggestions_listbox.get(selection[0]))
+        self._add_from_entry()
+
     def _on_suggestion_selected(self, _event):
-        """Fill the entry field with the clicked suggestion and hide the list."""
+        """Fill the entry field with the clicked suggestion and hide the list.
+
+        <<ListboxSelect>> also fires for the programmatic selection changes
+        _on_entry_arrow makes, which should only move the highlight, not
+        commit it -- _suppress_suggestion_commit distinguishes that case
+        from an actual mouse click here.
+        """
+        if self._suppress_suggestion_commit:
+            self._suppress_suggestion_commit = False
+            return
         selection = self.suggestions_listbox.curselection()
         if not selection:
             return
@@ -240,12 +404,14 @@ class App(tk.Tk):
 
     def _open_import_dialog(self):
         """Open a small dialog for pasting comma/newline-separated symbols or choosing a file."""
-        dialog = tk.Toplevel(self)
+        dialog = ctk.CTkToplevel(self)
         dialog.title("Import / Paste symbols")
         dialog.geometry("420x300")
 
-        tk.Label(dialog, text="Paste symbols (comma or newline separated):").pack(anchor="w", padx=10, pady=(10, 4))
-        text_box = tk.Text(dialog, height=8)
+        ctk.CTkLabel(dialog, text="Paste symbols (comma or newline separated):").pack(
+            anchor="w", padx=10, pady=(10, 4)
+        )
+        text_box = ctk.CTkTextbox(dialog, height=160)
         text_box.pack(fill="both", expand=True, padx=10)
 
         def import_pasted():
@@ -269,10 +435,12 @@ class App(tk.Tk):
             dialog.destroy()
             self._add_many(symbols, source_label=Path(path).name)
 
-        button_row = tk.Frame(dialog)
+        button_row = ctk.CTkFrame(dialog, fg_color="transparent")
         button_row.pack(fill="x", padx=10, pady=10)
-        tk.Button(button_row, text="Add pasted symbols", command=import_pasted).pack(side="left")
-        tk.Button(button_row, text="Choose a file...", command=import_from_file).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(button_row, text="Add pasted symbols", command=import_pasted).pack(side="left")
+        ctk.CTkButton(button_row, text="Choose a file...", command=import_from_file).pack(
+            side="left", padx=(6, 0)
+        )
 
     def _add_many(self, symbols: list[str], source_label: str):
         """Resolve and add several symbols at once, reporting any that failed to resolve."""
@@ -297,7 +465,7 @@ class App(tk.Tk):
         if not self.entries:
             messagebox.showinfo("Nothing to save", "Add at least one stock or index before saving a list.")
             return
-        name = simpledialog.askstring("Save as list", "Name for this list:")
+        name = ctk.CTkInputDialog(title="Save as list", text="Name for this list:").get_input()
         if not name:
             return
         try:
@@ -319,15 +487,15 @@ class App(tk.Tk):
 
     def _open_settings_dialog(self):
         """Open a small dialog to change the persistent default download/lists folders."""
-        dialog = tk.Toplevel(self)
+        dialog = ctk.CTkToplevel(self)
         dialog.title("Settings")
-        dialog.geometry("420x180")
+        dialog.geometry("420x200")
 
-        tk.Label(dialog, text="Default download folder:").pack(anchor="w", padx=10, pady=(10, 0))
-        download_row = tk.Frame(dialog)
+        ctk.CTkLabel(dialog, text="Default download folder:").pack(anchor="w", padx=10, pady=(10, 0))
+        download_row = ctk.CTkFrame(dialog, fg_color="transparent")
         download_row.pack(fill="x", padx=10)
         download_var = tk.StringVar(value=str(settings.get_download_folder()))
-        tk.Entry(download_row, textvariable=download_var).pack(side="left", fill="x", expand=True)
+        ctk.CTkEntry(download_row, textvariable=download_var).pack(side="left", fill="x", expand=True)
 
         def browse_download():
             """Fill the download-folder field via a native folder picker."""
@@ -335,13 +503,15 @@ class App(tk.Tk):
             if chosen:
                 download_var.set(chosen)
 
-        tk.Button(download_row, text="Browse...", command=browse_download).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(download_row, text="Browse...", width=90, command=browse_download).pack(
+            side="left", padx=(6, 0)
+        )
 
-        tk.Label(dialog, text="Custom lists folder:").pack(anchor="w", padx=10, pady=(10, 0))
-        lists_row = tk.Frame(dialog)
+        ctk.CTkLabel(dialog, text="Custom lists folder:").pack(anchor="w", padx=10, pady=(10, 0))
+        lists_row = ctk.CTkFrame(dialog, fg_color="transparent")
         lists_row.pack(fill="x", padx=10)
         lists_var = tk.StringVar(value=str(settings.get_lists_folder()))
-        tk.Entry(lists_row, textvariable=lists_var).pack(side="left", fill="x", expand=True)
+        ctk.CTkEntry(lists_row, textvariable=lists_var).pack(side="left", fill="x", expand=True)
 
         def browse_lists():
             """Fill the lists-folder field via a native folder picker."""
@@ -349,7 +519,9 @@ class App(tk.Tk):
             if chosen:
                 lists_var.set(chosen)
 
-        tk.Button(lists_row, text="Browse...", command=browse_lists).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(lists_row, text="Browse...", width=90, command=browse_lists).pack(
+            side="left", padx=(6, 0)
+        )
 
         def save():
             """Persist both folders and apply them immediately, without needing a restart."""
@@ -361,7 +533,7 @@ class App(tk.Tk):
             self.list_resolver.set_workbook_path(lists_path / "My Lists.xlsx")
             dialog.destroy()
 
-        tk.Button(dialog, text="Save", command=save).pack(pady=16)
+        ctk.CTkButton(dialog, text="Save", command=save).pack(pady=16)
 
     # -- Download ---------------------------------------------------------------------
 
@@ -380,22 +552,25 @@ class App(tk.Tk):
             messagebox.showerror("Invalid folder", "Please choose a valid folder to save to.")
             return
 
-        self.download_button.config(state="disabled")
+        self.download_button.configure(state="disabled")
         entries = list(self.entries)
         interval = self.interval_var.get()
+        filename = self.filename_entry.get()
         thread = threading.Thread(
-            target=self._run_download, args=(entries, interval, start, end, output_dir), daemon=True
+            target=self._run_download, args=(entries, interval, start, end, output_dir, filename), daemon=True
         )
         thread.start()
 
-    def _run_download(self, entries, interval, start, end, output_dir):
+    def _run_download(self, entries, interval, start, end, output_dir, filename):
         """Run the fetch/write pipeline off the UI thread, posting progress back via `after`."""
 
         def on_progress(i, total, name):
             self.after(0, lambda: self.status_var.set(f"Fetching {name} ({i}/{total})..."))
 
         try:
-            result = download_all(entries, interval, start, end, output_dir, on_progress=on_progress)
+            result = download_all(
+                entries, interval, start, end, output_dir, filename=filename, on_progress=on_progress
+            )
         except Exception as exc:
             self.after(0, lambda: self._download_failed(str(exc)))
             return
@@ -403,13 +578,13 @@ class App(tk.Tk):
 
     def _download_failed(self, message: str):
         """Show an unexpected failure and re-enable the Download button."""
-        self.download_button.config(state="normal")
+        self.download_button.configure(state="normal")
         messagebox.showerror("Download failed", message)
         self.status_var.set("Ready.")
 
     def _download_finished(self, result):
         """Report the final outcome (success/partial/failure) and re-enable the Download button."""
-        self.download_button.config(state="normal")
+        self.download_button.configure(state="normal")
         if not result.succeeded:
             reasons = "; ".join(f"{name}: {reason}" for name, reason in result.failed)
             self.status_var.set(f"No data downloaded. {reasons}")
