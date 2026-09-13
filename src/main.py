@@ -26,7 +26,7 @@ from tkcalendar import DateEntry
 
 import applog
 import settings
-from downloader import Entry, download_all, entry_from_symbol
+from downloader import Entry, download_all, entry_from_symbol, validate_date_range
 from importer import parse_file, parse_pasted_text
 from lists import ListNotFoundError, ListResolver, WorkbookLockedError
 from symbols import SymbolNotFoundError, SymbolResolver
@@ -566,8 +566,10 @@ class App(ctk.CTk):
             return
         start = self.from_date.get_date()
         end = self.to_date.get_date()
-        if start > end:
-            messagebox.showerror("Invalid date range", "The 'From' date must be before the 'To' date.")
+        interval = self.interval_var.get()
+        error = validate_date_range(interval, start, end)
+        if error:
+            messagebox.showerror("Invalid date range", error)
             return
         output_dir = Path(self.folder_var.get())
         if not output_dir.exists() or not output_dir.is_dir():
@@ -576,7 +578,6 @@ class App(ctk.CTk):
 
         self.download_button.configure(state="disabled")
         entries = list(self.entries)
-        interval = self.interval_var.get()
         filename = self.filename_entry.get()
         thread = threading.Thread(
             target=self._run_download, args=(entries, interval, start, end, output_dir, filename), daemon=True

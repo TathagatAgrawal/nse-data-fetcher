@@ -15,7 +15,7 @@ from typing import Callable
 
 import pandas as pd
 
-from datasources.base import DataSourceError, FetchRequest, clamp_start_for_interval
+from datasources.base import INTRADAY_LOOKBACK_DAYS, DataSourceError, FetchRequest, clamp_start_for_interval
 from datasources.yfinance_source import YFinanceSource
 from excel_writer import write_workbook
 from symbols import SymbolResolver
@@ -28,11 +28,41 @@ _ADAPTERS = {
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 
+_INTERVAL_LABELS = {"5min": "5-minute", "15min": "15-minute", "1hour": "1-hour"}
+
 
 def sanitize_filename(name: str) -> str:
     """Strip characters illegal in a filename on Windows (the most restrictive of the OSes this runs on)."""
     cleaned = _INVALID_FILENAME_CHARS.sub("_", name).strip().rstrip(". ")
     return cleaned or "NSE_Data"
+
+
+def validate_date_range(interval: str, start: date, end: date) -> str | None:
+    """Return a plain-language error if (interval, start, end) can't produce any data, else None.
+
+    Doesn't reject a range that's merely too *wide* for an intraday interval
+    -- download_all()/clamp_start_for_interval() already narrow that
+    silently (and tell the user via DownloadResult.was_clamped). This is
+    only for ranges that can't work at all: reversed, in the future, or
+    (for an intraday interval) entirely outside Yahoo Finance's lookback
+    window, which clamping alone would silently turn into a 0-row result
+    with no explanation.
+    """
+    if start > end:
+        return "The 'From' date must be before the 'To' date."
+    if end > date.today():
+        return "The 'To' date can't be in the future."
+
+    clamped_start, was_clamped = clamp_start_for_interval(interval, start, end)
+    if was_clamped and clamped_start > end:
+        max_days = INTRADAY_LOOKBACK_DAYS[interval]
+        label = _INTERVAL_LABELS.get(interval, interval)
+        return (
+            f"{label} data is only available for the last {max_days} days. "
+            "The selected range doesn't overlap with that window at all -- "
+            "pick a more recent range, or switch to Daily."
+        )
+    return None
 
 
 @dataclass(frozen=True)
