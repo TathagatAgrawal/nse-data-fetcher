@@ -120,11 +120,18 @@ class App(ctk.CTk):
         """Build all widgets and load the symbol/list resolvers."""
         super().__init__()
         self.title("NSE Data Fetcher")
-        self.geometry("580x660")
         try:
             self.iconphoto(True, tk.PhotoImage(file=str(ICON_PATH)))
         except tk.TclError:
             logger.warning("Couldn't load app icon from %s", ICON_PATH, exc_info=True)
+
+        # customtkinter widgets scale their own font/DPI automatically, but
+        # the plain tk/ttk widgets mixed in below (Listbox, DateEntry) don't
+        # participate in that at all -- they're left at Tk's tiny system
+        # default, which reads fine on macOS but renders visibly smaller
+        # than the rest of the UI on Windows. A CTkFont applied explicitly
+        # to them tracks the same scaling CTk's own widgets use.
+        self._widget_font = ctk.CTkFont(size=13)
 
         self.symbol_resolver = SymbolResolver()
         self.list_resolver = ListResolver()
@@ -136,6 +143,19 @@ class App(ctk.CTk):
         self._suppress_suggestion_commit = False
 
         self._build_widgets()
+
+        # Size the window to whatever it actually takes to show every widget
+        # without clipping, rather than a hardcoded guess -- a fixed pixel
+        # size that fit fine with macOS's default fonts left the bottom
+        # (status/progress) row hidden on Windows, where the fonts above
+        # (particularly the ones from _widget_font's DPI-aware scaling)
+        # render taller. minsize() also stops a manual resize from
+        # recreating the same problem.
+        self.update_idletasks()
+        width = max(580, self.winfo_reqwidth())
+        height = self.winfo_reqheight()
+        self.geometry(f"{width}x{height}")
+        self.minsize(width, height)
 
         # Warms the live-NSE-data caches in the background so the first
         # autocomplete lookup doesn't pay for that fetch on the UI thread --
@@ -177,7 +197,7 @@ class App(ctk.CTk):
         )
 
         # Suggestions appear here as the user types; hidden (not packed) when empty.
-        self.suggestions_listbox = _styled_listbox(self, height=5)
+        self.suggestions_listbox = _styled_listbox(self, height=5, font=self._widget_font)
         self.suggestions_listbox.bind("<<ListboxSelect>>", self._on_suggestion_selected)
 
         self._action_row = ctk.CTkFrame(self, fg_color="transparent")
@@ -194,7 +214,9 @@ class App(ctk.CTk):
         list_frame.pack(fill="both", expand=True, padx=10)
         scrollbar = ctk.CTkScrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
-        self.selection_listbox = _styled_listbox(list_frame, selectmode="extended", height=8)
+        self.selection_listbox = _styled_listbox(
+            list_frame, selectmode="extended", height=8, font=self._widget_font
+        )
         self.selection_listbox.config(yscrollcommand=scrollbar.set)
         self.selection_listbox.pack(side="left", fill="both", expand=True)
         scrollbar.configure(command=self.selection_listbox.yview)
@@ -220,12 +242,12 @@ class App(ctk.CTk):
         date_row = ctk.CTkFrame(self, fg_color="transparent")
         date_row.pack(fill="x", **pad)
         ctk.CTkLabel(date_row, text="From:").pack(side="left")
-        self.from_date = DateEntry(date_row, date_pattern="dd/mm/yyyy")
+        self.from_date = DateEntry(date_row, date_pattern="dd/mm/yyyy", font=self._widget_font)
         self.from_date.set_date(date.today() - timedelta(days=365))
         self.from_date.pack(side="left", padx=(4, 12))
         _fix_dateentry_dropdown_closing(self.from_date)
         ctk.CTkLabel(date_row, text="To:").pack(side="left")
-        self.to_date = DateEntry(date_row, date_pattern="dd/mm/yyyy")
+        self.to_date = DateEntry(date_row, date_pattern="dd/mm/yyyy", font=self._widget_font)
         self.to_date.set_date(date.today())
         self.to_date.pack(side="left", padx=(4, 0))
         _fix_dateentry_dropdown_closing(self.to_date)
