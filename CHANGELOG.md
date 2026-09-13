@@ -6,14 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.0.6] - 2026-09-13
-
-### Added
-
-- New upfront date validation: 
-  - Future 'To' date → now rejected immediately with a clear message, instead of silently fetching nothing.
-  - Intraday range entirely outside Yahoo's window (e.g. a narrow 5-minute range from 6 months ago) → rejected with an explicit "5-minute data is only available for the last 60 days... pick a more recent range, or switch to Daily."
-- A help dialogue explaining the basic features, and common failures.
+## [0.0.7] - 2026-09-13
 
 ### Fixed
 
@@ -22,6 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The 0.0.5 intraday clamp fix used the *advertised* limit (60/730 days) rather than the real one: Yahoo checks against the exact current moment, but every date here is midnight-only, so a start of exactly today-60 was still rejected ("must be within the last 60 days") -- verified directly against Yahoo. The clamp now targets today-59/729, the boundary that actually works.
 
 Together, the first two bugs are almost certainly what produced a batch of many symbols "downloading" (the status line cycled through all of them) while every single one silently failed -- the real cause (a crash while writing the file, immediately after a successful fetch) was being replaced by an unrelated `NameError` and never surfaced to the user at all.
+
+**[v0.0.6](https://github.com/TathagatAgrawal/nse-data-fetcher/releases/tag/v0.0.6) was pulled from recommended use for exactly these bugs** -- every intraday download in that release fails; use this version instead.
+
+## [0.0.6] - 2026-09-13
+
+### Added
+
+- New upfront date validation: 
+  - Future 'To' date → now rejected immediately with a clear message, instead of silently fetching nothing.
+  - Intraday range entirely outside Yahoo's window (e.g. a narrow 5-minute range from 6 months ago) → rejected with an explicit "5-minute data is only available for the last 60 days... pick a more recent range, or switch to Daily."
+- A help dialogue explaining the basic features, and common failures.
 
 ## [0.0.5] - 2026-09-13
 
