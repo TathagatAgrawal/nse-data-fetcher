@@ -49,8 +49,10 @@ class YFinanceSource(DataSource):
         df = df[[c for c in columns if c in df.columns]]
 
         if request.interval != "daily":
+            # Kept as a single combined date+time column rather than split
+            # into separate Date/Time columns -- splitting left "Date" as
+            # date-only, so sorting by it alone didn't order rows within the
+            # same day by time at all.
             df["Date"] = pd.to_datetime(df["Date"])
-            df.insert(1, "Time", df["Date"].dt.strftime("%H:%M"))
-            df["Date"] = df["Date"].dt.date
 
         return df.sort_values("Date").reset_index(drop=True)

@@ -64,13 +64,20 @@ class DataSource(ABC):
 def clamp_start_for_interval(interval: str, start: date, end: date) -> tuple[date, bool]:
     """Clamp a start date to what the given interval's lookback window allows.
 
+    Yahoo Finance's intraday lookback limits are a fixed window measured
+    back from *today* (e.g. "the last 60 days"), not from the query's own
+    end date -- a 30-day-wide 5-minute request from 6 months ago fails
+    entirely, even though its width is well under the 60-day limit,
+    because none of it falls within the last 60 days. So `earliest_allowed`
+    is anchored to today, not to `end`.
+
     Returns (possibly-adjusted start date, whether it was clamped) so callers
     can tell the user their range was shortened rather than silently doing it.
     """
     max_days = INTRADAY_LOOKBACK_DAYS.get(interval)
     if max_days is None:
         return start, False
-    earliest_allowed = end - timedelta(days=max_days)
+    earliest_allowed = date.today() - timedelta(days=max_days)
     if start < earliest_allowed:
         return earliest_allowed, True
     return start, False
