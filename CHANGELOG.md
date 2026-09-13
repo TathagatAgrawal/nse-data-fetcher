@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-09-13
+
+### Added
+
+- A modern, dark-mode-aware UI, rebuilt on `customtkinter` (rounded buttons, themed colors) instead of plain Tkinter widgets.
+- An app icon, shown in the Dock/taskbar/Cmd+Tab/Alt+Tab for the packaged `.exe`/`.app`.
+- An optional "File name" field for the downloaded workbook; leaving it blank keeps the existing auto-generated name.
+- Arrow-key navigation through the autocomplete suggestions list, with Enter adding the highlighted entry.
+
+### Fixed
+
+- The date pickers' drop-down calendar closed instantly when clicked, and clicking its month/year navigation arrows appeared to freeze it (the month/year actually changed, but the popup vanished immediately after) -- both caused by focus-handling conflicts between `customtkinter` and `tkcalendar` introduced by this release's UI rewrite.
+
 ## [0.0.3] - 2026-09-13
 
 ### Added
