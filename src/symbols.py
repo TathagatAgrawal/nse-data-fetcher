@@ -67,6 +67,15 @@ class SymbolResolver:
         # distinct from an empty list, which means "fetched and unreachable".
         self._live_equity_symbols_cache: list[str] | None = None
 
+    def warm_cache(self) -> None:
+        """Trigger and cache the live NSE equity list fetch ahead of time.
+
+        Meant to be called from a background thread at app startup so the
+        first autocomplete lookup or symbol resolution (which otherwise pays
+        for this fetch on the UI thread) is instant.
+        """
+        self._live_equity_symbols()
+
     def all_names(self) -> list[str]:
         """Return every known display name, for autocomplete suggestions."""
         return [s.display_name for s in self._by_name.values()]

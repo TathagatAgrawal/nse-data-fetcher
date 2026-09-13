@@ -62,6 +62,15 @@ class ListResolver:
         self._live_index_names_cache: list[str] | None = None
         self._live_constituents_cache: dict[str, list[str]] = {}
 
+    def warm_cache(self) -> None:
+        """Trigger and cache the live NSE index name fetch ahead of time.
+
+        Meant to be called from a background thread at app startup so the
+        first autocomplete lookup (which otherwise pays for this fetch on
+        the UI thread) is instant.
+        """
+        self._live_index_names()
+
     def bundled_list_names(self) -> list[str]:
         """Return the display names of every bundled index list, e.g. 'NIFTY 50 (as of Mar 2026)'."""
         return [f"{name} (as of {meta['last_updated']})" for name, meta in self._bundled_meta.items()]

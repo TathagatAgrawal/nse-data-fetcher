@@ -29,7 +29,7 @@ python -m pytest tests/
 ## Notes on data sources
 
 - Equities and major indices are fetched via `yfinance` (Yahoo Finance) and generally work reliably.
-- Index constituents and the full NSE equity list are fetched live from NSE's own unofficial public endpoints (via `nsepython`/`requests`), used to validate symbols and refresh bundled index lists. These endpoints are undocumented and can be blocked or fail depending on network/IP — during development, calls to them were blocked entirely from this sandboxed environment. Any failure here falls back to the bundled/cached data rather than crashing, but real-world reliability of the live-fetch path should be verified from a normal home/office network before relying on it.
+- Index constituents and the full NSE equity list are fetched live from NSE's own unofficial public endpoints (via plain `requests` calls), used to validate symbols and refresh bundled index lists. These endpoints are undocumented and can be blocked or fail depending on network/IP — during development, calls to them were blocked entirely from this sandboxed environment. Any failure here falls back to the bundled/cached data rather than crashing, but real-world reliability of the live-fetch path should be verified from a normal home/office network before relying on it. These live fetches run on a background thread at startup so the app's first autocomplete lookup doesn't have to wait on them.
 
 ## Packaging as a standalone app
 
@@ -39,18 +39,20 @@ The plan (§13 of the design doc) is to use PyInstaller, run separately on each 
 pip install pyinstaller
 cd src
 # macOS/Linux:
-pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv:." --add-data "lists:lists" main.py
+pyinstaller --onedir --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv:." --add-data "lists:lists" main.py
 # Windows:
-pyinstaller --onefile --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv;." --add-data "lists;lists" main.py
+pyinstaller --onedir --windowed --name "NSE Data Fetcher" --add-data "symbols_table.csv;." --add-data "lists;lists" main.py
 ```
+
+Use `--onedir`, not `--onefile`: a onefile build has to re-extract its entire archive to a fresh temp folder on *every* launch, which is the main reason it's slow to start -- onedir pays that cost once (when it's built), then launches directly from the already-unpacked folder. Zip the resulting `dist/NSE Data Fetcher/` folder (macOS: the `dist/NSE Data Fetcher.app` bundle) for distribution -- see `.github/workflows/release.yml`, which already does this.
 
 ## Publishing a release
 
-`.github/workflows/release.yml` builds both the Windows `.exe` and the macOS `.app` (each on its native runner, since PyInstaller doesn't cross-compile) and attaches them to a GitHub Release. To cut one:
+`.github/workflows/release.yml` builds both the Windows and macOS apps (each on its native runner, since PyInstaller doesn't cross-compile), zips each one, and attaches both to a GitHub Release. To cut one:
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-That triggers the workflow, which publishes a Release named after the tag with `NSE-Data-Fetcher-Windows.exe` and `NSE-Data-Fetcher-macOS.zip` attached — from there anyone can grab the file straight from the repo's Releases page, no Python or building required. Pushing to a branch, or running the workflow manually from the Actions tab, builds and uploads the same files as workflow artifacts without publishing a Release, so a build can be sanity-checked first.
+That triggers the workflow, which publishes a Release named after the tag with `NSE-Data-Fetcher-Windows.zip` and `NSE-Data-Fetcher-macOS.zip` attached — from there anyone can grab the file straight from the repo's Releases page, no Python or building required. Pushing to a branch, or running the workflow manually from the Actions tab, builds and uploads the same files as workflow artifacts without publishing a Release, so a build can be sanity-checked first.

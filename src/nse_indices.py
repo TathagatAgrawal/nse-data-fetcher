@@ -16,17 +16,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+_BROWSER_HEADERS = {
+    "user-agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+    ),
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "en-US,en;q=0.9",
+}
+
+
 def fetch_index_names() -> list[str]:
     """Best-effort fetch of every live NSE index name (100+ as of 2026).
 
     Returns an empty list (never raises) if the lookup fails. Note this
     only covers NSE's own indices -- BSE indices like SENSEX aren't
     included since they're published by BSE, not NSE.
+
+    nseindia.com (unlike the archives.nseindia.com CSVs used below) rejects
+    a cold request -- it needs a plain-page visit first to pick up cookies,
+    same as a browser would. This replicates that dance directly rather
+    than depending on the nsepython package for it, which pulled in scipy
+    (a ~100MB dependency) for nothing else this app uses.
     """
     try:
-        import nsepython
+        import requests
 
-        payload = nsepython.nsefetch("https://www.nseindia.com/api/allIndices")
+        with requests.Session() as session:
+            session.get("https://www.nseindia.com", headers=_BROWSER_HEADERS, timeout=10)
+            response = session.get(
+                "https://www.nseindia.com/api/allIndices", headers=_BROWSER_HEADERS, timeout=10
+            )
+            response.raise_for_status()
+            payload = response.json()
         return [row["index"] for row in payload["data"]]
     except Exception:
         logger.warning("Live NSE index name fetch failed", exc_info=True)

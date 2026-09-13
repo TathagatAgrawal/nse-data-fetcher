@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: NSE-Data-Fetcher-Windows.exe
+            asset_name: NSE-Data-Fetcher-Windows.zip
           - os: macos-latest
             asset_name: NSE-Data-Fetcher-macOS.zip
     runs-on: ${{ matrix.os }}
@@ -45,7 +45,7 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: src
         run: >
-          pyinstaller --onefile --windowed --name "NSE Data Fetcher"
+          pyinstaller --onedir --windowed --name "NSE Data Fetcher"
           --add-data "symbols_table.csv;."
           --add-data "lists;lists"
           main.py
@@ -54,15 +54,19 @@ jobs:
         if: runner.os == 'macOS'
         working-directory: src
         run: >
-          pyinstaller --onefile --windowed --name "NSE Data Fetcher"
+          pyinstaller --onedir --windowed --name "NSE Data Fetcher"
           --add-data "symbols_table.csv:."
           --add-data "lists:lists"
           main.py
 
-      - name: Package Windows executable
+      - name: Package Windows build
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item "src/dist/NSE Data Fetcher.exe" "${{ matrix.asset_name }}"
+        # --onedir produces a folder (the .exe plus its supporting DLLs/data
+        # files), not a single file, so it has to be zipped like the macOS
+        # .app bundle already is -- unlike --onefile, this starts almost
+        # instantly since there's no self-extraction step on every launch.
+        run: Compress-Archive -Path "src/dist/NSE Data Fetcher/*" -DestinationPath "${{ matrix.asset_name }}"
 
       - name: Package macOS app bundle
         if: runner.os == 'macOS'

@@ -42,6 +42,13 @@ class App(tk.Tk):
 
         self._build_widgets()
 
+        # Warms the live-NSE-data caches in the background so the first
+        # autocomplete lookup doesn't pay for that fetch on the UI thread --
+        # by the time a user has looked at the window and started typing,
+        # this has usually already finished.
+        threading.Thread(target=self.symbol_resolver.warm_cache, daemon=True).start()
+        threading.Thread(target=self.list_resolver.warm_cache, daemon=True).start()
+
     def report_callback_exception(self, exc_type, exc_value, tb):
         """Surface any unexpected error in a dialog instead of only printing to stderr.
 
