@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-13
+
+### Added
+
+- New upfront date validation: 
+  - Future 'To' date → now rejected immediately with a clear message, instead of silently fetching nothing.
+  - Intraday range entirely outside Yahoo's window (e.g. a narrow 5-minute range from 6 months ago) → rejected with an explicit "5-minute data is only available for the last 60 days... pick a more recent range, or switch to Daily."
+- A help dialogue explaining the basic features, and common failures.
+
 ## [0.0.5] - 2026-09-13
 
 ### Fixed
